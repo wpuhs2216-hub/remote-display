@@ -7,7 +7,6 @@ directory = "public"
 binding = "ASSETS"
 run_worker_first = ["/api/*", "/uploads/*", "/"]
 
-# KV ネームスペースID はデプロイ時に `wrangler kv namespace create KV` の結果で置換する
 [[kv_namespaces]]
 binding = "KV"
-id = "PLACEHOLDER_KV_ID"
+id = "d27d083c177c4ba0b514ebdd75fb9b61"
