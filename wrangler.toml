@@ -10,3 +10,12 @@ run_worker_first = ["/api/*", "/uploads/*", "/"]
 [[kv_namespaces]]
 binding = "KV"
 id = "d27d083c177c4ba0b514ebdd75fb9b61"
+
+# 状態保持用 Durable Object（強整合・WebSocketプッシュ）
+[[durable_objects.bindings]]
+name = "STATE"
+class_name = "StateDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["StateDO"]

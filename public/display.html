@@ -157,24 +157,47 @@
     noteArea.style.display = noteVisible ? 'block' : 'none';
   }
 
-  // 2秒間隔ポーリング（内容か色設定が変わった時だけ再描画）
+  // WebSocket優先（即時プッシュ）。使えない環境（LAN版など）はポーリングにフォールバック
   let lastState = null;
-  async function poll() {
-    try {
-      const res = await fetch('/api/state', { cache: 'no-store' });
-      const data = await res.json();
-      connState.classList.add('ok');
-      const s = JSON.stringify(data);
-      if (s !== lastState) {
-        lastState = s;
-        render(data);
-      }
-    } catch (e) {
-      connState.classList.remove('ok');
-    } finally {
-      setTimeout(poll, 2000);
+  let wsOk = false;
+  function apply(data) {
+    const s = JSON.stringify(data);
+    if (s !== lastState) {
+      lastState = s;
+      render(data);
     }
   }
+  function connectWS() {
+    let ws;
+    try {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${proto}://${location.host}/ws`);
+    } catch (e) {
+      setTimeout(connectWS, 5000);
+      return;
+    }
+    ws.onopen = () => { wsOk = true; connState.classList.add('ok'); };
+    ws.onmessage = (ev) => apply(JSON.parse(ev.data));
+    ws.onclose = () => {
+      wsOk = false;
+      connState.classList.remove('ok');
+      setTimeout(connectWS, 3000);
+    };
+    ws.onerror = () => ws.close();
+  }
+  async function poll() {
+    if (!wsOk) {
+      try {
+        const res = await fetch('/api/state', { cache: 'no-store' });
+        apply(await res.json());
+        connState.classList.add('ok');
+      } catch (e) {
+        connState.classList.remove('ok');
+      }
+    }
+    setTimeout(poll, wsOk ? 10000 : 2000); // WS接続中は保険として10秒毎のみ
+  }
+  connectWS();
   poll();
 
   // PWA: Service Worker 登録
