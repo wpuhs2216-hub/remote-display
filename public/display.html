@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>出力画面 - Remote Display</title>
+<link rel="manifest" href="/manifest-display.json">
+<link rel="icon" href="/icons/display-192.png">
+<link rel="apple-touch-icon" href="/icons/display-192.png">
+<meta name="theme-color" content="#ffffff">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; }
@@ -172,6 +176,9 @@
     }
   }
   poll();
+
+  // PWA: Service Worker 登録
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
   // タップでフルスクリーン切替（タブレット掲示用）
   document.body.addEventListener('dblclick', () => {

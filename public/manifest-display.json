@@ -1,0 +1,15 @@
+{
+  "id": "/display",
+  "name": "リモート表示 出力",
+  "short_name": "リモ出力",
+  "description": "画像とテキストを遠隔で出力するアプリの出力画面",
+  "start_url": "/display",
+  "scope": "/",
+  "display": "fullscreen",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "/icons/display-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/display-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

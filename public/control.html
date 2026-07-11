@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>操作画面 - Remote Display</title>
+<link rel="manifest" href="/manifest-control.json">
+<link rel="icon" href="/icons/control-192.png">
+<link rel="apple-touch-icon" href="/icons/control-192.png">
+<meta name="theme-color" content="#1a1d24">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -629,6 +633,9 @@
   });
 
   refresh();
+
+  // PWA: Service Worker 登録
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 </script>
 </body>
 </html>
