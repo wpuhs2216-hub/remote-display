@@ -169,6 +169,25 @@
   /* 編集モードでのみ表示する要素 */
   .edit-only { display: none; }
   body.edit .edit-only { display: block; }
+  /* 新規登録のテキスト候補ペア */
+  .pair {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 10px;
+    position: relative;
+  }
+  .pair textarea { min-height: 44px; margin-bottom: 8px; }
+  .pair input[type=text] { margin-bottom: 0; }
+  .pair .pair-del {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    background: #fee2e2;
+    color: #b91c1c;
+  }
   #empty { color: #999; font-size: 14px; text-align: center; padding: 12px 0; }
   #toast {
     position: fixed;
@@ -252,12 +271,12 @@
         <label>画像（上に表示）</label>
         <input type="file" id="imageInput" name="image" accept="image/*">
         <img id="preview" alt="プレビュー">
-        <label>メインテキスト（下に太字で表示・後から追加可能）</label>
-        <textarea id="textInput" placeholder="表示するテキストを入力"></textarea>
-        <label>このテキストの注釈（小さい赤字・任意）</label>
-        <input type="text" id="noteInput" placeholder="例: きょうこう">
-        <label>フォルダ（任意・新しい名前で新規作成）</label>
-        <input type="text" id="folderInput" placeholder="例: クイズ1回目">
+        <label>メインテキスト候補（複数登録可・それぞれに注釈を付けられる）</label>
+        <div id="textPairs"></div>
+        <button type="button" id="addPairBtn" class="btn-edit" style="margin-bottom:12px">＋テキスト候補を追加</button>
+        <label>フォルダ</label>
+        <select id="folderSel"></select>
+        <input type="text" id="folderInput" placeholder="新しいフォルダ名を入力" style="display:none">
         <button type="submit" class="btn-primary">登録する</button>
       </form>
     </div>
@@ -289,8 +308,8 @@
 <script>
   const addForm = document.getElementById('addForm');
   const imageInput = document.getElementById('imageInput');
-  const textInput = document.getElementById('textInput');
-  const noteInput = document.getElementById('noteInput');
+  const textPairs = document.getElementById('textPairs');
+  const folderSel = document.getElementById('folderSel');
   const folderInput = document.getElementById('folderInput');
   const preview = document.getElementById('preview');
   const presetList = document.getElementById('presetList');
@@ -330,6 +349,54 @@
     editBtn.classList.toggle('on', editMode);
     document.getElementById('listTitle').textContent = editMode ? '編集モード（登録内容の編集・並び替え）' : 'タップで出力を切り替え';
     renderList();
+  });
+
+  // 新規登録: テキスト候補ペア（テキスト+注釈）の追加・削除
+  function addPair(focus) {
+    const wrap = document.createElement('div');
+    wrap.className = 'pair';
+    const ta = document.createElement('textarea');
+    ta.className = 'pair-t';
+    ta.placeholder = `テキスト候補 ${textPairs.children.length + 1}（例: 〇ん〇〇う）`;
+    const ni = document.createElement('input');
+    ni.type = 'text';
+    ni.className = 'pair-n';
+    ni.placeholder = '注釈（小さい赤字・任意）';
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'pair-del';
+    del.textContent = '✕';
+    del.onclick = () => {
+      if (textPairs.children.length > 1) wrap.remove();
+      else { ta.value = ''; ni.value = ''; }
+    };
+    wrap.append(del, ta, ni);
+    textPairs.appendChild(wrap);
+    if (focus) ta.focus();
+  }
+  addPair();
+  document.getElementById('addPairBtn').addEventListener('click', () => addPair(true));
+
+  // フォルダ選択肢を既存フォルダから生成（新規作成も可能）
+  function renderFolderOptions() {
+    const prev = folderSel.value;
+    folderSel.innerHTML = '';
+    const opts = [['', '（未分類）'], ...folderNames().map((f) => [f, '📁 ' + f]), ['__new__', '＋ 新しいフォルダを作る…']];
+    for (const [val, label] of opts) {
+      const o = document.createElement('option');
+      o.value = val;
+      o.textContent = label;
+      folderSel.appendChild(o);
+    }
+    // 絞り込み中のフォルダを初期選択に
+    const def = prev && opts.some((x) => x[0] === prev) ? prev
+      : (folderFilter !== '__all__' && folderFilter !== '' && folderNames().includes(folderFilter)) ? folderFilter : '';
+    folderSel.value = def;
+    folderInput.style.display = folderSel.value === '__new__' ? 'block' : 'none';
+  }
+  folderSel.addEventListener('change', () => {
+    folderInput.style.display = folderSel.value === '__new__' ? 'block' : 'none';
+    if (folderSel.value === '__new__') folderInput.focus();
   });
 
   imageInput.addEventListener('change', () => {
@@ -703,6 +770,7 @@
     syncSelectionToCurrent();
     renderPreview();
     renderList();
+    renderFolderOptions();
   }
 
   // WebSocketで出力状態の変化を受けてプレビューとリストを即時更新
@@ -839,18 +907,22 @@
 
   addForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!imageInput.files[0] && !textInput.value.trim()) {
+    const pairs = [...textPairs.querySelectorAll('.pair')]
+      .map((w) => ({ t: w.querySelector('.pair-t').value.trim(), note: w.querySelector('.pair-n').value.trim() }))
+      .filter((x) => x.t);
+    if (!imageInput.files[0] && !pairs.length) {
       showToast('画像かテキストを入力してください');
       return;
     }
     const fd = new FormData();
     if (imageInput.files[0]) fd.append('image', imageInput.files[0]);
-    fd.append('text', textInput.value);
-    fd.append('note', noteInput.value);
-    const folder = folderInput.value.trim() || (folderFilter !== '__all__' ? folderFilter : '');
+    fd.append('textsJson', JSON.stringify(pairs));
+    const folder = folderSel.value === '__new__' ? folderInput.value.trim() : folderSel.value;
     fd.append('folder', folder);
     await api('/api/presets', { method: 'POST', body: fd });
     addForm.reset();
+    textPairs.innerHTML = '';
+    addPair();
     preview.style.display = 'none';
     showToast('登録しました');
     await refresh();

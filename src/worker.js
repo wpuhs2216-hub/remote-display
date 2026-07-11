@@ -145,16 +145,31 @@ export class StateDO {
 
     if (method === 'POST' && path === '/api/presets') {
       const fd = await req.formData();
-      const text = (fd.get('text') || '').toString().trim();
-      const note = (fd.get('note') || '').toString().trim();
+      // texts は textsJson（複数候補+注釈）優先、なければ従来の text/note 単一
+      let texts = [];
+      const textsJson = fd.get('textsJson');
+      if (typeof textsJson === 'string' && textsJson) {
+        try {
+          const arr = JSON.parse(textsJson);
+          if (Array.isArray(arr)) {
+            texts = arr
+              .map((x) => (typeof x === 'string' ? { t: x.trim(), note: '' } : { t: String(x.t || '').trim(), note: String(x.note || '').trim() }))
+              .filter((x) => x.t);
+          }
+        } catch { return json({ error: 'textsJson が不正です' }, 400); }
+      } else {
+        const text = (fd.get('text') || '').toString().trim();
+        const note = (fd.get('note') || '').toString().trim();
+        if (text) texts = [{ t: text, note }];
+      }
       const file = fd.get('image');
       const hasImage = file && typeof file === 'object' && file.size > 0;
-      if (!hasImage && !text) return json({ error: '画像またはテキストを指定してください' }, 400);
+      if (!hasImage && !texts.length) return json({ error: '画像またはテキストを指定してください' }, 400);
       let image = null;
       if (hasImage) {
         try { image = await saveImage(this.env, file); } catch (e) { return json({ error: e.message }, 400); }
       }
-      const preset = { id: newId(), image, texts: text ? [{ t: text, note }] : [], folder: (fd.get('folder') || '').toString().trim() };
+      const preset = { id: newId(), image, texts, folder: (fd.get('folder') || '').toString().trim() };
       db.presets.push(preset);
       await this.save();
       return json({ preset });

@@ -108,15 +108,30 @@ app.post('/api/note', auth, (req, res) => {
   res.json({ current: db.current });
 });
 
-// プリセット登録（画像 + メインテキスト + 注釈）
+// プリセット登録（画像 + テキスト候補（複数可・注釈付き））
 app.post('/api/presets', auth, upload.single('image'), (req, res) => {
-  const text = (req.body.text || '').trim();
-  const note = (req.body.note || '').trim();
-  if (!req.file && !text) return res.status(400).json({ error: '画像またはテキストを指定してください' });
+  let texts = [];
+  if (typeof req.body.textsJson === 'string' && req.body.textsJson) {
+    try {
+      const arr = JSON.parse(req.body.textsJson);
+      if (Array.isArray(arr)) {
+        texts = arr
+          .map((x) => (typeof x === 'string' ? { t: x.trim(), note: '' } : { t: String(x.t || '').trim(), note: String(x.note || '').trim() }))
+          .filter((x) => x.t);
+      }
+    } catch {
+      return res.status(400).json({ error: 'textsJson が不正です' });
+    }
+  } else {
+    const text = (req.body.text || '').trim();
+    const note = (req.body.note || '').trim();
+    if (text) texts = [{ t: text, note }];
+  }
+  if (!req.file && !texts.length) return res.status(400).json({ error: '画像またはテキストを指定してください' });
   const preset = {
     id: `${Date.now()}-${Math.round(Math.random() * 1e6)}`,
     image: req.file ? `/uploads/${req.file.filename}` : null,
-    texts: text ? [{ t: text, note }] : [],
+    texts,
     folder: (req.body.folder || '').trim(),
   };
   db.presets.push(preset);
