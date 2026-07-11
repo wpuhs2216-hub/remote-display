@@ -171,6 +171,38 @@
   }
   #toast.show { opacity: 1; }
   a.display-link { color: #93c5fd; font-size: 12px; text-decoration: none; }
+  button:disabled { opacity: .35; cursor: default; }
+  /* 現在の出力のプチプレビュー */
+  #miniPreview {
+    border-radius: 10px;
+    border: 1px solid #e5e7eb;
+    padding: 12px;
+    text-align: center;
+  }
+  #miniPreview img {
+    max-width: 100%;
+    max-height: 140px;
+    object-fit: contain;
+    display: block;
+    margin: 0 auto;
+  }
+  #miniPreview .pv-text {
+    font-weight: 700;
+    font-size: 18px;
+    line-height: 1.3;
+    margin-top: 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #miniPreview .pv-note {
+    font-weight: 600;
+    font-size: 12px;
+    color: #dc2626;
+    margin-top: 4px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #miniPreview .pv-idle { color: #999; font-size: 13px; padding: 10px 0; }
 </style>
 </head>
 <body>
@@ -185,6 +217,17 @@
   </header>
 
   <main>
+    <div class="card">
+      <h2>📺 現在の出力（ライブプレビュー）</h2>
+      <div id="miniPreview"></div>
+    </div>
+
+    <div class="card">
+      <h2>登録済みリスト（テキストを選んで「変更」→ 出力側に反映）</h2>
+      <div id="presetList"></div>
+      <div id="empty">まだ登録がありません</div>
+    </div>
+
     <div class="card">
       <h2>新規登録</h2>
       <form id="addForm">
@@ -215,12 +258,6 @@
         <option value="1080x1920">縦 1080×1920（9:16）</option>
         <option value="1080x1080">正方形 1080×1080</option>
       </select>
-    </div>
-
-    <div class="card">
-      <h2>登録済みリスト（テキストを選んで「表示」→ 出力側に反映）</h2>
-      <div id="presetList"></div>
-      <div id="empty">まだ登録がありません</div>
     </div>
 
     <div class="card">
@@ -282,6 +319,58 @@
     if (p.image) return current.image === p.image;
     return !current.image && p.texts.includes(current.text);
   };
+
+  // 現在の出力のプチプレビュー
+  function renderPreview() {
+    const box = document.getElementById('miniPreview');
+    box.style.background = settings.bg;
+    box.innerHTML = '';
+    if (!current || (!current.image && !current.text && !(current.note && current.showNote))) {
+      const idle = document.createElement('div');
+      idle.className = 'pv-idle';
+      idle.textContent = 'デフォルト画面（何も表示していません）';
+      box.appendChild(idle);
+      return;
+    }
+    if (current.image) {
+      const img = document.createElement('img');
+      img.src = current.image;
+      box.appendChild(img);
+    }
+    if (current.text) {
+      const t = document.createElement('div');
+      t.className = 'pv-text';
+      t.style.color = settings.fg;
+      t.textContent = current.text;
+      box.appendChild(t);
+    }
+    if (current.note && current.showNote) {
+      const n = document.createElement('div');
+      n.className = 'pv-note';
+      n.textContent = current.note;
+      box.appendChild(n);
+    }
+  }
+
+  // 表示中のプリセットは、表示中のテキスト・注釈状態を選択初期値に同期する
+  function syncSelectionToCurrent() {
+    if (!current) return;
+    for (const p of presets) {
+      if (current.image !== p.image) continue;
+      const idx = p.texts.indexOf(current.text);
+      if (idx >= 0) selectedText[p.id] = idx;
+      if (p.note) noteSel[p.id] = !!current.showNote;
+    }
+  }
+
+  // 選択中の内容が表示中と完全に同じか（同じなら「変更」ボタンを無効化）
+  function isSameAsCurrent(p) {
+    if (!current || current.image !== p.image) return false;
+    const selText = p.texts.length ? (p.texts[selectedText[p.id] || 0] || '') : '';
+    if ((current.text || '') !== selText) return false;
+    if (p.note && !!current.showNote !== !!noteSel[p.id]) return false;
+    return true;
+  }
 
   function renderList() {
     presetList.innerHTML = '';
@@ -353,7 +442,7 @@
         const chk = document.createElement('input');
         chk.type = 'checkbox';
         chk.checked = noteSel[p.id];
-        chk.onchange = () => { noteSel[p.id] = chk.checked; };
+        chk.onchange = () => { noteSel[p.id] = chk.checked; renderList(); };
         const span = document.createElement('span');
         span.textContent = '注釈を出す: ' + p.note;
         noteLine.append(chk, span);
@@ -368,7 +457,7 @@
         radio.type = 'radio';
         radio.name = 'sel-' + p.id;
         radio.checked = selectedText[p.id] === i;
-        radio.onchange = () => { selectedText[p.id] = i; };
+        radio.onchange = () => { selectedText[p.id] = i; renderList(); };
         const txt = document.createElement('span');
         txt.className = 'txt';
         txt.textContent = t;
@@ -400,6 +489,7 @@
       const showBtn = document.createElement('button');
       showBtn.className = 'btn-show';
       showBtn.textContent = current ? '変更' : '表示'; // 既に何か出力中なら「変更」
+      showBtn.disabled = isSameAsCurrent(p); // 表示中と同じ内容なら押せない
       showBtn.onclick = async () => {
         const textIndex = p.texts.length ? selectedText[p.id] : -1;
         const showNote = p.note ? noteSel[p.id] : false;
@@ -487,8 +577,30 @@
     bgColor.value = settings.bg;
     fgColor.value = settings.fg;
     if (current) noteToggle.checked = !!current.showNote;
+    syncSelectionToCurrent();
+    renderPreview();
     renderList();
   }
+
+  // WebSocketで出力状態の変化を受けてプレビューとリストを即時更新
+  function connectWS() {
+    let ws;
+    try {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${proto}://${location.host}/ws`);
+    } catch (e) { return; }
+    ws.onmessage = (ev) => {
+      const data = JSON.parse(ev.data);
+      current = data.current;
+      settings = data.settings || settings;
+      syncSelectionToCurrent();
+      renderPreview();
+      renderList();
+    };
+    ws.onclose = () => setTimeout(connectWS, 5000);
+    ws.onerror = () => ws.close();
+  }
+  connectWS();
 
   // 出力画面と同じレイアウト（上:画像 / 下:太字テキスト / 注釈）を1枚のPNGに合成して保存
   async function exportPreset(p) {
