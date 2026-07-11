@@ -8,8 +8,8 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; }
   body {
-    background: #000;
-    color: #fff;
+    background: #fff; /* 既定: 白地（設定で変更可・JSが適用） */
+    color: #000;
     font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
     overflow: hidden;
   }
@@ -32,16 +32,28 @@
     max-height: 100%;
     object-fit: contain;
   }
-  /* 下: テキストエリア */
+  /* 下: メインテキスト（太字・大） */
   #textArea {
     flex: 0 0 auto;
     max-height: 40dvh;
     overflow-y: auto;
-    padding: 3vmin 4vmin 5vmin;
+    padding: 2vmin 4vmin;
     text-align: center;
     font-size: clamp(40px, 10vmin, 128px);
     font-weight: 700;
     line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  /* 注釈（小さい赤字・いつでもON/OFF可能） */
+  #noteArea {
+    flex: 0 0 auto;
+    padding: 0 4vmin 3vmin;
+    text-align: center;
+    font-size: clamp(16px, 4vmin, 48px);
+    font-weight: 600;
+    color: #dc2626;
+    line-height: 1.4;
     white-space: pre-wrap;
     word-break: break-word;
   }
@@ -53,7 +65,7 @@
     align-items: center;
     justify-content: center;
     gap: 12px;
-    color: #555;
+    color: #999;
     font-size: clamp(16px, 3vmin, 28px);
   }
   #connState {
@@ -65,6 +77,7 @@
     border-radius: 50%;
     background: #e33;
     transition: background .3s;
+    z-index: 10;
   }
   #connState.ok { background: #2c5; }
   .hidden { display: none !important; }
@@ -81,6 +94,7 @@
   <div id="stage" class="hidden">
     <div id="imageArea"><img id="image" alt=""></div>
     <div id="textArea"></div>
+    <div id="noteArea"></div>
   </div>
 
 <script>
@@ -89,11 +103,18 @@
   const imageArea = document.getElementById('imageArea');
   const image = document.getElementById('image');
   const textArea = document.getElementById('textArea');
+  const noteArea = document.getElementById('noteArea');
   const connState = document.getElementById('connState');
 
-  // 現在の内容を画面に反映
-  function render(current) {
-    if (!current || (!current.image && !current.text)) {
+  // 現在の内容と色設定を画面に反映
+  function render(state) {
+    const current = state.current;
+    const s = state.settings || { bg: '#ffffff', fg: '#000000' };
+    document.body.style.background = s.bg;
+    textArea.style.color = s.fg;
+
+    const noteVisible = current && current.note && current.showNote;
+    if (!current || (!current.image && !current.text && !noteVisible)) {
       stage.classList.add('hidden');
       idle.classList.remove('hidden');
       return;
@@ -108,27 +129,30 @@
       image.removeAttribute('src');
       imageArea.classList.add('hidden');
     }
+
     textArea.textContent = current.text || '';
-    textArea.classList.toggle('hidden', !current.text);
     // 画像なしの場合はテキストを中央に大きく表示
     textArea.style.maxHeight = current.image ? '40dvh' : 'none';
     textArea.style.flex = current.image ? '0 0 auto' : '1';
     textArea.style.display = current.text ? 'flex' : 'none';
     textArea.style.alignItems = 'center';
     textArea.style.justifyContent = 'center';
+
+    noteArea.textContent = noteVisible ? current.note : '';
+    noteArea.style.display = noteVisible ? 'block' : 'none';
   }
 
-  // 2秒間隔ポーリング（サーバレス環境でも動く方式。内容が変わった時だけ再描画）
+  // 2秒間隔ポーリング（内容か色設定が変わった時だけ再描画）
   let lastState = null;
   async function poll() {
     try {
       const res = await fetch('/api/state', { cache: 'no-store' });
       const data = await res.json();
       connState.classList.add('ok');
-      const s = JSON.stringify(data.current);
+      const s = JSON.stringify(data);
       if (s !== lastState) {
         lastState = s;
-        render(data.current);
+        render(data);
       }
     } catch (e) {
       connState.classList.remove('ok');

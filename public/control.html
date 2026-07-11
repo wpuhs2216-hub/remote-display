@@ -79,9 +79,6 @@
     display: none;
   }
   .preset {
-    display: flex;
-    gap: 12px;
-    align-items: center;
     padding: 12px;
     border: 2px solid transparent;
     border-radius: 10px;
@@ -89,6 +86,7 @@
     margin-bottom: 10px;
   }
   .preset.active { border-color: #16a34a; background: #f0fdf4; }
+  .preset .top { display: flex; gap: 12px; align-items: flex-start; }
   .preset .thumb {
     width: 72px;
     height: 72px;
@@ -105,18 +103,6 @@
     font-size: 11px;
   }
   .preset .body { flex: 1; min-width: 0; }
-  .preset .text {
-    font-size: 14px;
-    white-space: pre-wrap;
-    word-break: break-word;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    margin-bottom: 8px;
-  }
-  .preset .btns { display: flex; gap: 6px; flex-wrap: wrap; }
-  .preset .btns button { padding: 8px 12px; font-size: 13px; }
   .badge {
     display: inline-block;
     font-size: 11px;
@@ -124,6 +110,44 @@
     font-weight: 700;
     margin-bottom: 4px;
   }
+  .note-line {
+    font-size: 12px;
+    font-weight: 600;
+    color: #dc2626;
+    margin-bottom: 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .text-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px dashed #e5e7eb;
+  }
+  .text-row input[type=radio] { width: 18px; height: 18px; flex: 0 0 18px; }
+  .text-row .txt {
+    flex: 1;
+    min-width: 0;
+    font-size: 14px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .text-row .mini {
+    padding: 6px 8px;
+    font-size: 12px;
+    background: #e5e7eb;
+    color: #333;
+    flex: 0 0 auto;
+  }
+  .text-row .mini.del { background: #fee2e2; color: #b91c1c; }
+  .preset .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .preset .btns button { padding: 8px 12px; font-size: 13px; }
+  .color-row { display: flex; gap: 16px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .color-row label { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .color-row input[type=color] { width: 48px; height: 36px; border: 1px solid #ccc; border-radius: 6px; padding: 2px; background: #fff; }
+  .toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 14px; }
+  .toggle-row input[type=checkbox] { width: 20px; height: 20px; }
   #empty { color: #999; font-size: 14px; text-align: center; padding: 12px 0; }
   #toast {
     position: fixed;
@@ -139,6 +163,7 @@
     transition: opacity .3s;
     pointer-events: none;
     white-space: nowrap;
+    z-index: 20;
   }
   #toast.show { opacity: 1; }
   a.display-link { color: #93c5fd; font-size: 12px; text-decoration: none; }
@@ -157,25 +182,39 @@
 
   <main>
     <div class="card">
-      <h2>新規登録（画像 + テキスト）</h2>
+      <h2>新規登録</h2>
       <form id="addForm">
         <label>画像（上に表示）</label>
         <input type="file" id="imageInput" name="image" accept="image/*">
         <img id="preview" alt="プレビュー">
-        <label>テキスト（下に表示）</label>
-        <textarea id="textInput" name="text" placeholder="表示するテキストを入力"></textarea>
+        <label>メインテキスト（下に太字で表示・後から追加可能）</label>
+        <textarea id="textInput" placeholder="表示するテキストを入力"></textarea>
+        <label>注釈（小さい赤字・任意）</label>
+        <input type="text" id="noteInput" placeholder="例: ※スタッフが美味しくいただきました">
         <button type="submit" class="btn-primary">登録する</button>
       </form>
     </div>
 
     <div class="card">
-      <h2>登録済みリスト（「表示」を押すと出力側に反映）</h2>
+      <h2>🎨 表示・保存の設定</h2>
+      <div class="color-row">
+        <label>背景色 <input type="color" id="bgColor" value="#ffffff"></label>
+        <label>文字色 <input type="color" id="fgColor" value="#000000"></label>
+      </div>
+      <div class="toggle-row">
+        <input type="checkbox" id="noteToggle" checked>
+        <label for="noteToggle" style="margin:0">注釈を表示する（表示中いつでも切替・保存にも反映）</label>
+      </div>
       <label>🎬 保存サイズ（動画素材用PNG）</label>
       <select id="sizeSel">
         <option value="1920x1080">横 1920×1080（16:9）</option>
         <option value="1080x1920">縦 1080×1920（9:16）</option>
         <option value="1080x1080">正方形 1080×1080</option>
       </select>
+    </div>
+
+    <div class="card">
+      <h2>登録済みリスト（テキストを選んで「表示」→ 出力側に反映）</h2>
       <div id="presetList"></div>
       <div id="empty">まだ登録がありません</div>
     </div>
@@ -194,13 +233,19 @@
   const addForm = document.getElementById('addForm');
   const imageInput = document.getElementById('imageInput');
   const textInput = document.getElementById('textInput');
+  const noteInput = document.getElementById('noteInput');
   const preview = document.getElementById('preview');
   const presetList = document.getElementById('presetList');
   const empty = document.getElementById('empty');
   const toast = document.getElementById('toast');
+  const bgColor = document.getElementById('bgColor');
+  const fgColor = document.getElementById('fgColor');
+  const noteToggle = document.getElementById('noteToggle');
 
   let presets = [];
   let current = null;
+  let settings = { bg: '#ffffff', fg: '#000000' };
+  const selectedText = {}; // presetId -> 選択中テキスト候補のindex
   let toastTimer;
 
   function showToast(msg) {
@@ -221,15 +266,22 @@
     }
   });
 
-  const isActive = (p) => current && current.image === p.image && current.text === p.text;
+  const isActive = (p) => {
+    if (!current) return false;
+    if (p.image) return current.image === p.image;
+    return !current.image && p.texts.includes(current.text);
+  };
 
   function renderList() {
     presetList.innerHTML = '';
     empty.style.display = presets.length ? 'none' : 'block';
     for (const p of presets) {
+      if (!(p.id in selectedText)) selectedText[p.id] = 0;
       const div = document.createElement('div');
       div.className = 'preset' + (isActive(p) ? ' active' : '');
 
+      const top = document.createElement('div');
+      top.className = 'top';
       const thumb = p.image
         ? Object.assign(document.createElement('img'), { className: 'thumb', src: p.image })
         : Object.assign(document.createElement('div'), { className: 'thumb noimg', textContent: '画像なし' });
@@ -242,10 +294,46 @@
         badge.textContent = '● 表示中';
         body.appendChild(badge);
       }
-      const text = document.createElement('div');
-      text.className = 'text';
-      text.textContent = p.text || '（テキストなし）';
-      body.appendChild(text);
+      if (p.note) {
+        const noteLine = document.createElement('div');
+        noteLine.className = 'note-line';
+        noteLine.textContent = '注釈: ' + p.note;
+        body.appendChild(noteLine);
+      }
+
+      // テキスト候補（ラジオで1つだけ選択 = 太字系は同時に1つ）
+      p.texts.forEach((t, i) => {
+        const row = document.createElement('div');
+        row.className = 'text-row';
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'sel-' + p.id;
+        radio.checked = selectedText[p.id] === i;
+        radio.onchange = () => { selectedText[p.id] = i; };
+        const txt = document.createElement('span');
+        txt.className = 'txt';
+        txt.textContent = t;
+        const edit = document.createElement('button');
+        edit.className = 'mini';
+        edit.textContent = '✎';
+        edit.onclick = async () => {
+          const v = prompt('テキストを編集', t);
+          if (v === null) return;
+          const texts = [...p.texts];
+          texts[i] = v.trim();
+          await putPreset(p.id, { textsJson: JSON.stringify(texts.filter(Boolean)) });
+        };
+        const del = document.createElement('button');
+        del.className = 'mini del';
+        del.textContent = '✕';
+        del.onclick = async () => {
+          if (!confirm('このテキスト候補を削除しますか？')) return;
+          const texts = p.texts.filter((_, j) => j !== i);
+          await putPreset(p.id, { textsJson: JSON.stringify(texts) });
+        };
+        row.append(radio, txt, edit, del);
+        body.appendChild(row);
+      });
 
       const btns = document.createElement('div');
       btns.className = 'btns';
@@ -254,22 +342,28 @@
       showBtn.className = 'btn-show';
       showBtn.textContent = '表示';
       showBtn.onclick = async () => {
-        await api('/api/show', { method: 'POST', body: JSON.stringify({ presetId: p.id }), headers: { 'Content-Type': 'application/json' } });
+        const textIndex = p.texts.length ? selectedText[p.id] : -1;
+        await api('/api/show', { method: 'POST', body: JSON.stringify({ presetId: p.id, textIndex }), headers: { 'Content-Type': 'application/json' } });
         showToast('出力側に表示しました');
         await refresh();
       };
 
-      const editBtn = document.createElement('button');
-      editBtn.className = 'btn-edit';
-      editBtn.textContent = 'テキスト編集';
-      editBtn.onclick = async () => {
-        const newText = prompt('新しいテキスト', p.text || '');
-        if (newText === null) return;
-        const fd = new FormData();
-        fd.append('text', newText);
-        await api(`/api/presets/${p.id}`, { method: 'PUT', body: fd });
-        showToast('更新しました');
-        await refresh();
+      const addTextBtn = document.createElement('button');
+      addTextBtn.className = 'btn-edit';
+      addTextBtn.textContent = '＋テキスト';
+      addTextBtn.onclick = async () => {
+        const v = prompt('追加するテキスト');
+        if (!v || !v.trim()) return;
+        await putPreset(p.id, { textsJson: JSON.stringify([...p.texts, v.trim()]) });
+      };
+
+      const noteBtn = document.createElement('button');
+      noteBtn.className = 'btn-edit';
+      noteBtn.textContent = '注釈✎';
+      noteBtn.onclick = async () => {
+        const v = prompt('注釈（小さい赤字・空で削除）', p.note || '');
+        if (v === null) return;
+        await putPreset(p.id, { note: v.trim() });
       };
 
       const saveBtn = document.createElement('button');
@@ -287,9 +381,10 @@
         await refresh();
       };
 
-      btns.append(showBtn, editBtn, saveBtn, delBtn);
+      btns.append(showBtn, addTextBtn, noteBtn, saveBtn, delBtn);
       body.appendChild(btns);
-      div.append(thumb, body);
+      top.append(thumb, body);
+      div.appendChild(top);
       presetList.appendChild(div);
     }
   }
@@ -316,49 +411,46 @@
     return res.json();
   }
 
+  async function putPreset(id, fields) {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+    await api(`/api/presets/${id}`, { method: 'PUT', body: fd });
+    showToast('更新しました');
+    await refresh();
+  }
+
   async function refresh() {
     const [p, s] = await Promise.all([api('/api/presets'), api('/api/state')]);
     presets = p.presets;
     current = s.current;
+    settings = s.settings || settings;
+    bgColor.value = settings.bg;
+    fgColor.value = settings.fg;
+    if (current) noteToggle.checked = !!current.showNote;
     renderList();
   }
 
-  addForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!imageInput.files[0] && !textInput.value.trim()) {
-      showToast('画像かテキストを入力してください');
-      return;
-    }
-    const fd = new FormData();
-    if (imageInput.files[0]) fd.append('image', imageInput.files[0]);
-    fd.append('text', textInput.value);
-    await api('/api/presets', { method: 'POST', body: fd });
-    addForm.reset();
-    preview.style.display = 'none';
-    showToast('登録しました');
-    await refresh();
-  });
-
-  // 出力画面と同じレイアウト（上:画像 / 下:テキスト）を1枚のPNGに合成して保存
+  // 出力画面と同じレイアウト（上:画像 / 下:太字テキスト / 注釈）を1枚のPNGに合成して保存
   async function exportPreset(p) {
     const [W, H] = document.getElementById('sizeSel').value.split('x').map(Number);
+    const text = p.texts.length ? p.texts[selectedText[p.id] || 0] : '';
+    const note = noteToggle.checked ? (p.note || '') : '';
     const canvas = document.createElement('canvas');
     canvas.width = W;
     canvas.height = H;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#000';
+    ctx.fillStyle = settings.bg;
     ctx.fillRect(0, 0, W, H);
 
     const vmin = Math.min(W, H);
-    const fontSize = Math.round(vmin * 0.10); // 出力画面の 10vmin 相当
-    const lineH = Math.round(fontSize * 1.5);
-    ctx.font = `700 ${fontSize}px "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif`;
+    const family = '"Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif';
 
-    // テキストの折り返し計算
-    let lines = [];
-    if (p.text) {
+    // 折り返し計算（フォントサイズ毎）
+    const wrap = (str, fontPx) => {
+      ctx.font = `700 ${fontPx}px ${family}`;
       const maxW = W * 0.92;
-      for (const para of p.text.split('\n')) {
+      const lines = [];
+      for (const para of str.split('\n')) {
         let cur = '';
         for (const ch of para) {
           if (cur && ctx.measureText(cur + ch).width > maxW) { lines.push(cur); cur = ch; }
@@ -366,16 +458,26 @@
         }
         lines.push(cur);
       }
-      // 画像がある場合は高さ40%までに制限（あふれた行は…で省略）
-      if (p.image) {
-        const maxLines = Math.max(1, Math.floor((H * 0.4) / lineH));
-        if (lines.length > maxLines) {
-          lines = lines.slice(0, maxLines);
-          lines[maxLines - 1] = lines[maxLines - 1].slice(0, -1) + '…';
-        }
+      return lines;
+    };
+
+    const mainSize = Math.round(vmin * 0.10); // 出力画面の 10vmin 相当
+    const mainLineH = Math.round(mainSize * 1.5);
+    let mainLines = text ? wrap(text, mainSize) : [];
+    if (p.image && mainLines.length) {
+      const maxLines = Math.max(1, Math.floor((H * 0.4) / mainLineH));
+      if (mainLines.length > maxLines) {
+        mainLines = mainLines.slice(0, maxLines);
+        mainLines[maxLines - 1] = mainLines[maxLines - 1].slice(0, -1) + '…';
       }
     }
-    const textH = lines.length ? lines.length * lineH + vmin * 0.05 : 0;
+    const noteSize = Math.round(vmin * 0.04); // 注釈は小さめ
+    const noteLineH = Math.round(noteSize * 1.4);
+    const noteLines = note ? wrap(note, noteSize) : [];
+
+    const mainH = mainLines.length ? mainLines.length * mainLineH : 0;
+    const noteH = noteLines.length ? noteLines.length * noteLineH + vmin * 0.02 : 0;
+    const bottomH = mainH + noteH + (mainH || noteH ? vmin * 0.04 : 0);
 
     if (p.image) {
       const img = new Image();
@@ -383,27 +485,52 @@
       await img.decode();
       const pad = vmin * 0.02;
       const areaW = W - pad * 2;
-      const areaH = H - textH - pad * 2;
+      const areaH = H - bottomH - pad * 2;
       const s = Math.min(areaW / img.width, areaH / img.height);
       const dw = img.width * s;
       const dh = img.height * s;
       ctx.drawImage(img, (W - dw) / 2, pad + (areaH - dh) / 2, dw, dh);
     }
 
-    if (lines.length) {
-      ctx.fillStyle = '#fff';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const blockTop = p.image ? H - textH : (H - lines.length * lineH) / 2;
-      lines.forEach((ln, i) => ctx.fillText(ln, W / 2, blockTop + lineH * (i + 0.5)));
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // メインテキスト（画像なしなら中央、ありなら下部）
+    let cursorY = p.image ? H - bottomH : (H - mainH - noteH) / 2;
+    if (mainLines.length) {
+      ctx.fillStyle = settings.fg;
+      ctx.font = `700 ${mainSize}px ${family}`;
+      mainLines.forEach((ln, i) => ctx.fillText(ln, W / 2, cursorY + mainLineH * (i + 0.5)));
+      cursorY += mainH + vmin * 0.02;
+    }
+    // 注釈（赤字・小）
+    if (noteLines.length) {
+      ctx.fillStyle = '#dc2626';
+      ctx.font = `600 ${noteSize}px ${family}`;
+      noteLines.forEach((ln, i) => ctx.fillText(ln, W / 2, cursorY + noteLineH * (i + 0.5)));
     }
 
     const a = document.createElement('a');
-    a.download = `display-${(p.text || 'image').replace(/[\\/:*?"<>|\s]/g, '_').slice(0, 12)}-${W}x${H}.png`;
+    a.download = `display-${(text || note || 'image').replace(/[\\/:*?"<>|\s]/g, '_').slice(0, 12)}-${W}x${H}.png`;
     a.href = canvas.toDataURL('image/png');
     a.click();
     showToast('PNGを保存しました');
   }
+
+  // 背景色・文字色の変更（選択したら即保存 → 出力側にも数秒で反映）
+  async function saveColors() {
+    const res = await api('/api/settings', { method: 'POST', body: JSON.stringify({ bg: bgColor.value, fg: fgColor.value }), headers: { 'Content-Type': 'application/json' } });
+    settings = res.settings;
+    showToast('色設定を保存しました');
+  }
+  bgColor.addEventListener('change', saveColors);
+  fgColor.addEventListener('change', saveColors);
+
+  // 注釈の表示ON/OFF（表示中いつでも切替）
+  noteToggle.addEventListener('change', async () => {
+    await api('/api/note', { method: 'POST', body: JSON.stringify({ showNote: noteToggle.checked }), headers: { 'Content-Type': 'application/json' } });
+    showToast(noteToggle.checked ? '注釈を表示します' : '注釈を非表示にしました');
+    await refresh();
+  });
 
   // 合言葉の変更
   document.getElementById('changeKeyBtn').addEventListener('click', async () => {
@@ -419,6 +546,23 @@
   document.getElementById('clearBtn').addEventListener('click', async () => {
     await api('/api/clear', { method: 'POST' });
     showToast('表示をクリアしました');
+    await refresh();
+  });
+
+  addForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!imageInput.files[0] && !textInput.value.trim()) {
+      showToast('画像かテキストを入力してください');
+      return;
+    }
+    const fd = new FormData();
+    if (imageInput.files[0]) fd.append('image', imageInput.files[0]);
+    fd.append('text', textInput.value);
+    fd.append('note', noteInput.value);
+    await api('/api/presets', { method: 'POST', body: fd });
+    addForm.reset();
+    preview.style.display = 'none';
+    showToast('登録しました');
     await refresh();
   });
 

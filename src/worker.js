@@ -1,17 +1,36 @@
 // Cloudflare Workers 版バックエンド
 // - 静的ページは assets バインディング（public/）が配信
 // - プリセットと表示状態は KV の "db" キー、画像は "img:*" キーに保存
-// - 書き込み系 API は ADMIN_KEY シークレット設定時のみ X-Admin-Key ヘッダで認証
+// - 書き込み系 API は合言葉（X-Admin-Key）で認証
+//
+// DB 構造:
+//   presets: [{ id, image, texts: [string], note }]   … 1画像に複数テキスト候補+注釈
+//   current: { image, text, note, showNote } | null    … 表示中の内容
+//   settings: { bg, fg }                                … 背景色・文字色（既定: 白地に黒文字）
+//   adminKey: string?                                   … UIで変更された合言葉（シークレットより優先）
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 
+// 旧形式（text 単一）からの移行と既定値の補完
+function normalizeDb(db) {
+  for (const p of db.presets) {
+    if (!Array.isArray(p.texts)) p.texts = p.text ? [p.text] : [];
+    delete p.text;
+    if (typeof p.note !== 'string') p.note = '';
+  }
+  if (!db.settings) db.settings = { bg: '#ffffff', fg: '#000000' };
+  if (db.current && db.current.showNote === undefined) db.current.showNote = true;
+  return db;
+}
+
 async function loadDb(env) {
-  return (await env.KV.get('db', 'json')) || { presets: [], current: null };
+  return normalizeDb((await env.KV.get('db', 'json')) || { presets: [], current: null });
 }
 const saveDb = (env, db) => env.KV.put('db', JSON.stringify(db));
 
 const newId = () => `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+const isHexColor = (v) => /^#[0-9a-fA-F]{6}$/.test(v || '');
 
 // 画像を KV に保存してパスを返す
 async function saveImage(env, file) {
@@ -46,7 +65,7 @@ export default {
 
       // 読み取り系
       if (method === 'GET') {
-        if (path === '/api/state') return json({ current: db.current });
+        if (path === '/api/state') return json({ current: db.current, settings: db.settings });
         if (path === '/api/presets') return json({ presets: db.presets });
         return json({ error: 'not found' }, 404);
       }
@@ -67,9 +86,29 @@ export default {
         return json({ ok: true });
       }
 
+      // 背景色・文字色の変更
+      if (method === 'POST' && path === '/api/settings') {
+        const { bg, fg } = await req.json();
+        if (isHexColor(bg)) db.settings.bg = bg;
+        if (isHexColor(fg)) db.settings.fg = fg;
+        await saveDb(env, db);
+        return json({ settings: db.settings });
+      }
+
+      // 注釈の表示ON/OFF（表示中いつでも切替可能）
+      if (method === 'POST' && path === '/api/note') {
+        const { showNote } = await req.json();
+        if (db.current) {
+          db.current.showNote = !!showNote;
+          await saveDb(env, db);
+        }
+        return json({ current: db.current });
+      }
+
       if (method === 'POST' && path === '/api/presets') {
         const fd = await req.formData();
         const text = (fd.get('text') || '').toString().trim();
+        const note = (fd.get('note') || '').toString().trim();
         const file = fd.get('image');
         const hasImage = file && typeof file === 'object' && file.size > 0;
         if (!hasImage && !text) return json({ error: '画像またはテキストを指定してください' }, 400);
@@ -77,7 +116,7 @@ export default {
         if (hasImage) {
           try { image = await saveImage(env, file); } catch (e) { return json({ error: e.message }, 400); }
         }
-        const preset = { id: newId(), text, image };
+        const preset = { id: newId(), image, texts: text ? [text] : [], note };
         db.presets.push(preset);
         await saveDb(env, db);
         return json({ preset });
@@ -87,26 +126,40 @@ export default {
       if (presetMatch) {
         const preset = db.presets.find((p) => p.id === presetMatch[1]);
         if (!preset) return json({ error: 'not found' }, 404);
+        const wasShown = db.current && db.current.image === preset.image;
 
         if (method === 'PUT') {
           const fd = await req.formData();
-          const wasShown = db.current && db.current.image === preset.image && db.current.text === preset.text;
-          const text = fd.get('text');
-          if (typeof text === 'string') preset.text = text.trim();
+          const textsJson = fd.get('textsJson');
+          if (typeof textsJson === 'string') {
+            try {
+              const arr = JSON.parse(textsJson);
+              if (Array.isArray(arr)) preset.texts = arr.map((t) => String(t).trim()).filter(Boolean);
+            } catch { return json({ error: 'textsJson が不正です' }, 400); }
+          }
+          const note = fd.get('note');
+          if (typeof note === 'string') preset.note = note.trim();
           const file = fd.get('image');
           if (file && typeof file === 'object' && file.size > 0) {
             await deleteImage(env, preset.image);
             try { preset.image = await saveImage(env, file); } catch (e) { return json({ error: e.message }, 400); }
           }
           // 表示中のプリセットを編集した場合は表示にも反映
-          if (wasShown) db.current = { text: preset.text, image: preset.image };
+          if (wasShown) {
+            db.current = {
+              image: preset.image,
+              text: preset.texts.includes(db.current.text) ? db.current.text : (preset.texts[0] || ''),
+              note: preset.note,
+              showNote: db.current.showNote,
+            };
+          }
           await saveDb(env, db);
           return json({ preset });
         }
 
         if (method === 'DELETE') {
           db.presets = db.presets.filter((p) => p.id !== preset.id);
-          if (db.current && db.current.image === preset.image && db.current.text === preset.text) db.current = null;
+          if (wasShown) db.current = null;
           await deleteImage(env, preset.image);
           await saveDb(env, db);
           return json({ ok: true });
@@ -114,10 +167,16 @@ export default {
       }
 
       if (method === 'POST' && path === '/api/show') {
-        const { presetId } = await req.json();
+        const { presetId, textIndex } = await req.json();
         const preset = db.presets.find((p) => p.id === presetId);
         if (!preset) return json({ error: 'not found' }, 404);
-        db.current = { text: preset.text, image: preset.image };
+        const text = textIndex >= 0 ? (preset.texts[textIndex] || '') : '';
+        db.current = {
+          image: preset.image,
+          text,
+          note: preset.note,
+          showNote: db.current ? db.current.showNote : true,
+        };
         await saveDb(env, db);
         return json({ current: db.current });
       }
