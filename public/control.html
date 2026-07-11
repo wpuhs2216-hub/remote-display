@@ -36,6 +36,16 @@
   .card h2 { font-size: 14px; color: #666; margin-bottom: 12px; }
   label { display: block; font-size: 13px; color: #444; margin-bottom: 6px; }
   input[type=file] { width: 100%; font-size: 14px; margin-bottom: 12px; }
+  select, input[type=text] {
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    background: #fff;
+    font-family: inherit;
+  }
   textarea {
     width: 100%;
     min-height: 72px;
@@ -160,8 +170,21 @@
 
     <div class="card">
       <h2>登録済みリスト（「表示」を押すと出力側に反映）</h2>
+      <label>🎬 保存サイズ（動画素材用PNG）</label>
+      <select id="sizeSel">
+        <option value="1920x1080">横 1920×1080（16:9）</option>
+        <option value="1080x1920">縦 1080×1920（9:16）</option>
+        <option value="1080x1080">正方形 1080×1080</option>
+      </select>
       <div id="presetList"></div>
       <div id="empty">まだ登録がありません</div>
+    </div>
+
+    <div class="card">
+      <h2>⚙ 設定：合言葉の変更</h2>
+      <label>新しい合言葉（4〜64文字）</label>
+      <input type="text" id="newKeyInput" placeholder="新しい合言葉を入力" autocomplete="off">
+      <button id="changeKeyBtn" class="btn-primary" style="background:#7c3aed">合言葉を変更する</button>
     </div>
   </main>
 
@@ -249,6 +272,11 @@
         await refresh();
       };
 
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'btn-edit';
+      saveBtn.textContent = '🎬保存';
+      saveBtn.onclick = () => exportPreset(p).catch((e) => showToast('保存失敗: ' + e.message));
+
       const delBtn = document.createElement('button');
       delBtn.className = 'btn-del';
       delBtn.textContent = '削除';
@@ -259,7 +287,7 @@
         await refresh();
       };
 
-      btns.append(showBtn, editBtn, delBtn);
+      btns.append(showBtn, editBtn, saveBtn, delBtn);
       body.appendChild(btns);
       div.append(thumb, body);
       presetList.appendChild(div);
@@ -309,6 +337,83 @@
     preview.style.display = 'none';
     showToast('登録しました');
     await refresh();
+  });
+
+  // 出力画面と同じレイアウト（上:画像 / 下:テキスト）を1枚のPNGに合成して保存
+  async function exportPreset(p) {
+    const [W, H] = document.getElementById('sizeSel').value.split('x').map(Number);
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    const vmin = Math.min(W, H);
+    const fontSize = Math.round(vmin * 0.10); // 出力画面の 10vmin 相当
+    const lineH = Math.round(fontSize * 1.5);
+    ctx.font = `700 ${fontSize}px "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif`;
+
+    // テキストの折り返し計算
+    let lines = [];
+    if (p.text) {
+      const maxW = W * 0.92;
+      for (const para of p.text.split('\n')) {
+        let cur = '';
+        for (const ch of para) {
+          if (cur && ctx.measureText(cur + ch).width > maxW) { lines.push(cur); cur = ch; }
+          else cur += ch;
+        }
+        lines.push(cur);
+      }
+      // 画像がある場合は高さ40%までに制限（あふれた行は…で省略）
+      if (p.image) {
+        const maxLines = Math.max(1, Math.floor((H * 0.4) / lineH));
+        if (lines.length > maxLines) {
+          lines = lines.slice(0, maxLines);
+          lines[maxLines - 1] = lines[maxLines - 1].slice(0, -1) + '…';
+        }
+      }
+    }
+    const textH = lines.length ? lines.length * lineH + vmin * 0.05 : 0;
+
+    if (p.image) {
+      const img = new Image();
+      img.src = p.image;
+      await img.decode();
+      const pad = vmin * 0.02;
+      const areaW = W - pad * 2;
+      const areaH = H - textH - pad * 2;
+      const s = Math.min(areaW / img.width, areaH / img.height);
+      const dw = img.width * s;
+      const dh = img.height * s;
+      ctx.drawImage(img, (W - dw) / 2, pad + (areaH - dh) / 2, dw, dh);
+    }
+
+    if (lines.length) {
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const blockTop = p.image ? H - textH : (H - lines.length * lineH) / 2;
+      lines.forEach((ln, i) => ctx.fillText(ln, W / 2, blockTop + lineH * (i + 0.5)));
+    }
+
+    const a = document.createElement('a');
+    a.download = `display-${(p.text || 'image').replace(/[\\/:*?"<>|\s]/g, '_').slice(0, 12)}-${W}x${H}.png`;
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+    showToast('PNGを保存しました');
+  }
+
+  // 合言葉の変更
+  document.getElementById('changeKeyBtn').addEventListener('click', async () => {
+    const newKey = document.getElementById('newKeyInput').value.trim();
+    if (newKey.length < 4) { showToast('合言葉は4文字以上にしてください'); return; }
+    if (!confirm('合言葉を変更しますか？他の操作端末では新しい合言葉の再入力が必要になります')) return;
+    await api('/api/admin-key', { method: 'POST', body: JSON.stringify({ newKey }), headers: { 'Content-Type': 'application/json' } });
+    localStorage.setItem('adminKey', newKey);
+    document.getElementById('newKeyInput').value = '';
+    showToast('合言葉を変更しました');
   });
 
   document.getElementById('clearBtn').addEventListener('click', async () => {

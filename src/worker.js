@@ -42,20 +42,30 @@ export default {
     }
 
     if (path.startsWith('/api/')) {
+      const db = await loadDb(env);
+
       // 読み取り系
       if (method === 'GET') {
-        const db = await loadDb(env);
         if (path === '/api/state') return json({ current: db.current });
         if (path === '/api/presets') return json({ presets: db.presets });
         return json({ error: 'not found' }, 404);
       }
 
-      // 書き込み系は合言葉必須（ADMIN_KEY 未設定時はローカル開発とみなし素通し）
-      if (env.ADMIN_KEY && req.headers.get('X-Admin-Key') !== env.ADMIN_KEY) {
+      // 書き込み系は合言葉必須（UIで変更された値が優先。未設定時はローカル開発とみなし素通し）
+      const adminKey = db.adminKey || env.ADMIN_KEY;
+      if (adminKey && req.headers.get('X-Admin-Key') !== adminKey) {
         return json({ error: '合言葉が違います' }, 401);
       }
 
-      const db = await loadDb(env);
+      // 合言葉の変更
+      if (method === 'POST' && path === '/api/admin-key') {
+        const { newKey } = await req.json();
+        const k = (newKey || '').trim();
+        if (k.length < 4 || k.length > 64) return json({ error: '合言葉は4〜64文字で指定してください' }, 400);
+        db.adminKey = k;
+        await saveDb(env, db);
+        return json({ ok: true });
+      }
 
       if (method === 'POST' && path === '/api/presets') {
         const fd = await req.formData();

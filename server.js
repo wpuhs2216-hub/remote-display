@@ -47,15 +47,25 @@ const deleteImageFile = (imagePath) => {
   fs.existsSync(file) && fs.unlinkSync(file);
 };
 
-// 書き込み系APIの合言葉チェック
+// 書き込み系APIの合言葉チェック（UIで変更された値が優先）
 const auth = (req, res, next) => {
-  if (ADMIN_KEY && req.get('X-Admin-Key') !== ADMIN_KEY) {
+  const adminKey = db.adminKey || ADMIN_KEY;
+  if (adminKey && req.get('X-Admin-Key') !== adminKey) {
     return res.status(401).json({ error: '合言葉が違います' });
   }
   next();
 };
 
 // ---- API ----
+
+// 合言葉の変更
+app.post('/api/admin-key', auth, (req, res) => {
+  const k = (req.body.newKey || '').trim();
+  if (k.length < 4 || k.length > 64) return res.status(400).json({ error: '合言葉は4〜64文字で指定してください' });
+  db.adminKey = k;
+  saveDb();
+  res.json({ ok: true });
+});
 
 // 現在の表示内容
 app.get('/api/state', (req, res) => res.json({ current: db.current }));
