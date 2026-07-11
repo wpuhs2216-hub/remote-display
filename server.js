@@ -167,7 +167,7 @@ app.post('/api/show', auth, (req, res) => {
     image: preset.image,
     text: textIndex >= 0 ? (preset.texts[textIndex] || '') : '',
     note: preset.note,
-    showNote: db.current ? db.current.showNote : true,
+    showNote: typeof req.body.showNote === 'boolean' ? req.body.showNote : (db.current ? db.current.showNote : true),
   };
   saveDb();
   res.json({ current: db.current });

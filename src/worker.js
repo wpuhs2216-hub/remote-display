@@ -167,7 +167,7 @@ export default {
       }
 
       if (method === 'POST' && path === '/api/show') {
-        const { presetId, textIndex } = await req.json();
+        const { presetId, textIndex, showNote } = await req.json();
         const preset = db.presets.find((p) => p.id === presetId);
         if (!preset) return json({ error: 'not found' }, 404);
         const text = textIndex >= 0 ? (preset.texts[textIndex] || '') : '';
@@ -175,7 +175,7 @@ export default {
           image: preset.image,
           text,
           note: preset.note,
-          showNote: db.current ? db.current.showNote : true,
+          showNote: typeof showNote === 'boolean' ? showNote : (db.current ? db.current.showNote : true),
         };
         await saveDb(env, db);
         return json({ current: db.current });

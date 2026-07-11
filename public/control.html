@@ -246,7 +246,14 @@
   let current = null;
   let settings = { bg: '#ffffff', fg: '#000000' };
   const selectedText = {}; // presetId -> 選択中テキスト候補のindex
+  const noteSel = {};      // presetId -> 注釈を出力に含めるか
   let toastTimer;
+
+  // 合言葉は初回のみ入力（この端末に記憶し、2回目以降はスキップ）
+  if (!localStorage.getItem('adminKey')) {
+    const k = prompt('操作用の合言葉を入力してください（初回のみ）');
+    if (k !== null) localStorage.setItem('adminKey', k.trim());
+  }
 
   function showToast(msg) {
     toast.textContent = msg;
@@ -275,8 +282,47 @@
   function renderList() {
     presetList.innerHTML = '';
     empty.style.display = presets.length ? 'none' : 'block';
+
+    // デフォルト画面（何も表示しない）に戻すカード
+    const defCard = document.createElement('div');
+    defCard.className = 'preset' + (current ? '' : ' active');
+    const defTop = document.createElement('div');
+    defTop.className = 'top';
+    const defThumb = Object.assign(document.createElement('div'), { className: 'thumb noimg', textContent: '🔄' });
+    defThumb.style.fontSize = '28px';
+    const defBody = document.createElement('div');
+    defBody.className = 'body';
+    if (!current) {
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = '● 表示中';
+      defBody.appendChild(badge);
+    }
+    const defTxt = document.createElement('div');
+    defTxt.style.fontSize = '14px';
+    defTxt.textContent = 'デフォルト画面（読み込み中表示に戻す）';
+    defBody.appendChild(defTxt);
+    if (current) {
+      const defBtns = document.createElement('div');
+      defBtns.className = 'btns';
+      const defBtn = document.createElement('button');
+      defBtn.className = 'btn-show';
+      defBtn.textContent = '変更';
+      defBtn.onclick = async () => {
+        await api('/api/clear', { method: 'POST' });
+        showToast('デフォルト画面に戻しました');
+        await refresh();
+      };
+      defBtns.appendChild(defBtn);
+      defBody.appendChild(defBtns);
+    }
+    defTop.append(defThumb, defBody);
+    defCard.appendChild(defTop);
+    presetList.appendChild(defCard);
+
     for (const p of presets) {
       if (!(p.id in selectedText)) selectedText[p.id] = 0;
+      if (!(p.id in noteSel)) noteSel[p.id] = true;
       const div = document.createElement('div');
       div.className = 'preset' + (isActive(p) ? ' active' : '');
 
@@ -295,9 +341,18 @@
         body.appendChild(badge);
       }
       if (p.note) {
-        const noteLine = document.createElement('div');
+        const noteLine = document.createElement('label');
         noteLine.className = 'note-line';
-        noteLine.textContent = '注釈: ' + p.note;
+        noteLine.style.display = 'flex';
+        noteLine.style.alignItems = 'center';
+        noteLine.style.gap = '6px';
+        const chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.checked = noteSel[p.id];
+        chk.onchange = () => { noteSel[p.id] = chk.checked; };
+        const span = document.createElement('span');
+        span.textContent = '注釈を出す: ' + p.note;
+        noteLine.append(chk, span);
         body.appendChild(noteLine);
       }
 
@@ -340,11 +395,12 @@
 
       const showBtn = document.createElement('button');
       showBtn.className = 'btn-show';
-      showBtn.textContent = '表示';
+      showBtn.textContent = current ? '変更' : '表示'; // 既に何か出力中なら「変更」
       showBtn.onclick = async () => {
         const textIndex = p.texts.length ? selectedText[p.id] : -1;
-        await api('/api/show', { method: 'POST', body: JSON.stringify({ presetId: p.id, textIndex }), headers: { 'Content-Type': 'application/json' } });
-        showToast('出力側に表示しました');
+        const showNote = p.note ? noteSel[p.id] : false;
+        await api('/api/show', { method: 'POST', body: JSON.stringify({ presetId: p.id, textIndex, showNote }), headers: { 'Content-Type': 'application/json' } });
+        showToast('出力側に反映しました');
         await refresh();
       };
 
@@ -434,7 +490,7 @@
   async function exportPreset(p) {
     const [W, H] = document.getElementById('sizeSel').value.split('x').map(Number);
     const text = p.texts.length ? p.texts[selectedText[p.id] || 0] : '';
-    const note = noteToggle.checked ? (p.note || '') : '';
+    const note = (p.note && noteSel[p.id]) ? p.note : '';
     const canvas = document.createElement('canvas');
     canvas.width = W;
     canvas.height = H;

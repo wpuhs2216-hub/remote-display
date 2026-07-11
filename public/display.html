@@ -63,17 +63,26 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
-  /* 未表示時のプレースホルダ */
+  /* 未表示時のデフォルト画面（読み込み中スピナー） */
   #idle {
     height: 100dvh;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 12px;
-    color: #999;
-    font-size: clamp(16px, 3vmin, 28px);
+    gap: 20px;
+    color: #aaa;
+    font-size: clamp(14px, 2.5vmin, 22px);
   }
+  .spinner {
+    width: clamp(40px, 8vmin, 72px);
+    height: clamp(40px, 8vmin, 72px);
+    border: 5px solid rgba(128,128,128,.25);
+    border-top-color: #888;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
   #connState {
     position: fixed;
     top: 10px;
@@ -93,8 +102,8 @@
   <div id="connState" title="接続状態"></div>
 
   <div id="idle">
-    <div>表示待機中</div>
-    <div style="font-size:.6em">操作画面から送信すると表示されます</div>
+    <div class="spinner"></div>
+    <div>読み込み中…</div>
   </div>
 
   <div id="stage" class="hidden">
