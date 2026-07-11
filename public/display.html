@@ -13,42 +13,48 @@
     font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
     overflow: hidden;
   }
+  /* 画像+テキスト+注釈を1つのグループとして縦中央に配置（テキストは写真の真下） */
   #stage {
     height: 100dvh;
     display: flex;
     flex-direction: column;
-  }
-  /* 上: 画像エリア */
-  #imageArea {
-    flex: 1;
-    min-height: 0;
-    display: flex;
     align-items: center;
     justify-content: center;
     padding: 2vmin;
+  }
+  /* 上: 画像エリア（あふれる分だけ縮む） */
+  #imageArea {
+    flex: 0 1 auto;
+    min-height: 0;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   #imageArea img {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
   }
-  /* 下: メインテキスト（太字・大） */
+  /* 写真の真下: メインテキスト（太字・大） */
   #textArea {
     flex: 0 0 auto;
-    max-height: 40dvh;
+    width: 100%;
+    max-height: 45dvh;
     overflow-y: auto;
-    padding: 2vmin 4vmin;
+    padding: 1.5vmin 2vmin 0;
     text-align: center;
-    font-size: clamp(40px, 10vmin, 128px);
+    font-size: clamp(40px, 14vmin, 176px);
     font-weight: 700;
-    line-height: 1.5;
+    line-height: 1.4;
     white-space: pre-wrap;
     word-break: break-word;
   }
   /* 注釈（小さい赤字・いつでもON/OFF可能） */
   #noteArea {
     flex: 0 0 auto;
-    padding: 0 4vmin 3vmin;
+    width: 100%;
+    padding: 1vmin 2vmin 0;
     text-align: center;
     font-size: clamp(16px, 4vmin, 48px);
     font-weight: 600;
@@ -131,12 +137,8 @@
     }
 
     textArea.textContent = current.text || '';
-    // 画像なしの場合はテキストを中央に大きく表示
-    textArea.style.maxHeight = current.image ? '40dvh' : 'none';
-    textArea.style.flex = current.image ? '0 0 auto' : '1';
-    textArea.style.display = current.text ? 'flex' : 'none';
-    textArea.style.alignItems = 'center';
-    textArea.style.justifyContent = 'center';
+    textArea.style.maxHeight = current.image ? '45dvh' : 'none';
+    textArea.style.display = current.text ? 'block' : 'none';
 
     noteArea.textContent = noteVisible ? current.note : '';
     noteArea.style.display = noteVisible ? 'block' : 'none';

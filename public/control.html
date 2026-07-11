@@ -461,11 +461,11 @@
       return lines;
     };
 
-    const mainSize = Math.round(vmin * 0.10); // 出力画面の 10vmin 相当
-    const mainLineH = Math.round(mainSize * 1.5);
+    const mainSize = Math.round(vmin * 0.14); // 出力画面の 14vmin 相当
+    const mainLineH = Math.round(mainSize * 1.4);
     let mainLines = text ? wrap(text, mainSize) : [];
     if (p.image && mainLines.length) {
-      const maxLines = Math.max(1, Math.floor((H * 0.4) / mainLineH));
+      const maxLines = Math.max(1, Math.floor((H * 0.45) / mainLineH));
       if (mainLines.length > maxLines) {
         mainLines = mainLines.slice(0, maxLines);
         mainLines[maxLines - 1] = mainLines[maxLines - 1].slice(0, -1) + '…';
@@ -475,35 +475,41 @@
     const noteLineH = Math.round(noteSize * 1.4);
     const noteLines = note ? wrap(note, noteSize) : [];
 
+    const gap = vmin * 0.02;
+    const pad = vmin * 0.02;
     const mainH = mainLines.length ? mainLines.length * mainLineH : 0;
-    const noteH = noteLines.length ? noteLines.length * noteLineH + vmin * 0.02 : 0;
-    const bottomH = mainH + noteH + (mainH || noteH ? vmin * 0.04 : 0);
+    const noteH = noteLines.length ? noteLines.length * noteLineH : 0;
 
+    // 画像サイズを先に決め、画像+テキスト+注釈のグループ全体を縦中央に配置（テキストは写真の真下）
+    let img = null, dw = 0, dh = 0;
     if (p.image) {
-      const img = new Image();
+      img = new Image();
       img.src = p.image;
       await img.decode();
-      const pad = vmin * 0.02;
       const areaW = W - pad * 2;
-      const areaH = H - bottomH - pad * 2;
+      const areaH = H - pad * 2 - (mainH ? mainH + gap : 0) - (noteH ? noteH + gap : 0);
       const s = Math.min(areaW / img.width, areaH / img.height);
-      const dw = img.width * s;
-      const dh = img.height * s;
-      ctx.drawImage(img, (W - dw) / 2, pad + (areaH - dh) / 2, dw, dh);
+      dw = img.width * s;
+      dh = img.height * s;
     }
+    const contentH = dh + (mainH ? (dh ? gap : 0) + mainH : 0) + (noteH ? gap + noteH : 0);
+    let cursorY = (H - contentH) / 2;
 
+    if (img) {
+      ctx.drawImage(img, (W - dw) / 2, cursorY, dw, dh);
+      cursorY += dh;
+    }
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    // メインテキスト（画像なしなら中央、ありなら下部）
-    let cursorY = p.image ? H - bottomH : (H - mainH - noteH) / 2;
     if (mainLines.length) {
+      if (img) cursorY += gap;
       ctx.fillStyle = settings.fg;
       ctx.font = `700 ${mainSize}px ${family}`;
       mainLines.forEach((ln, i) => ctx.fillText(ln, W / 2, cursorY + mainLineH * (i + 0.5)));
-      cursorY += mainH + vmin * 0.02;
+      cursorY += mainH;
     }
-    // 注釈（赤字・小）
     if (noteLines.length) {
+      cursorY += gap;
       ctx.fillStyle = '#dc2626';
       ctx.font = `600 ${noteSize}px ${family}`;
       noteLines.forEach((ln, i) => ctx.fillText(ln, W / 2, cursorY + noteLineH * (i + 0.5)));
