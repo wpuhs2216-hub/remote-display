@@ -126,9 +126,20 @@
   const connState = document.getElementById('connState');
 
   // 現在の内容と色設定を画面に反映
-  function render(state) {
+  // 画像は事前にデコード完了させてからテキストと同時に切り替える（画像だけ遅れて出るのを防ぐ）
+  let renderSeq = 0;
+  async function render(state) {
+    const seq = ++renderSeq;
     const current = state.current;
     const s = state.settings || { bg: '#ffffff', fg: '#000000' };
+
+    if (current && current.image) {
+      const pre = new Image();
+      pre.src = current.image;
+      try { await pre.decode(); } catch (e) {}
+      if (seq !== renderSeq) return; // デコード中に次の更新が来たら破棄
+    }
+
     document.body.style.background = s.bg;
     textArea.style.color = s.fg;
 
@@ -199,6 +210,19 @@
   }
   connectWS();
   poll();
+
+  // 全プリセット画像を先読みしてブラウザキャッシュに載せる（切替を即時にする）
+  async function preloadAll() {
+    try {
+      const res = await fetch('/api/presets', { cache: 'no-store' });
+      const data = await res.json();
+      for (const p of data.presets) {
+        if (p.image) { const i = new Image(); i.src = p.image; }
+      }
+    } catch (e) {}
+  }
+  preloadAll();
+  setInterval(preloadAll, 60000);
 
   // PWA: Service Worker 登録
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});

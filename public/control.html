@@ -70,11 +70,12 @@
     cursor: pointer;
     touch-action: manipulation;
   }
+  button:disabled { opacity: .35; cursor: default; }
   .btn-primary { background: #2563eb; color: #fff; width: 100%; padding: 12px; font-size: 16px; }
-  .btn-show { background: #16a34a; color: #fff; }
   .btn-edit { background: #e5e7eb; color: #333; }
   .btn-del { background: #fee2e2; color: #b91c1c; }
   .btn-clear { background: #444; color: #fff; font-size: 13px; padding: 8px 12px; }
+  .btn-clear.on { background: #2563eb; }
   #preview {
     max-width: 100%;
     max-height: 180px;
@@ -82,6 +83,16 @@
     margin-bottom: 12px;
     display: none;
   }
+  /* フォルダタブ */
+  #folderBar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .chip {
+    background: #eef0f3;
+    color: #444;
+    padding: 8px 14px;
+    border-radius: 16px;
+    font-size: 13px;
+  }
+  .chip.on { background: #2563eb; color: #fff; }
   .preset {
     padding: 12px;
     border: 2px solid transparent;
@@ -90,6 +101,7 @@
     margin-bottom: 10px;
   }
   .preset.active { border-color: #16a34a; background: #f0fdf4; }
+  .preset.tappable { cursor: pointer; }
   .preset .top { display: flex; gap: 12px; align-items: flex-start; }
   .preset .thumb {
     width: 72px;
@@ -118,7 +130,6 @@
     font-size: 12px;
     font-weight: 600;
     color: #dc2626;
-    margin-bottom: 6px;
     white-space: pre-wrap;
     word-break: break-word;
   }
@@ -126,19 +137,22 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 0;
+    padding: 10px 8px;
+    border-radius: 8px;
     border-bottom: 1px dashed #e5e7eb;
   }
-  .text-row input[type=radio] { width: 18px; height: 18px; flex: 0 0 18px; }
+  body:not(.edit) .text-row { cursor: pointer; }
+  body:not(.edit) .text-row:active { background: #e5e7eb; }
+  .text-row.on { background: #dcfce7; }
   .text-row .txt {
     flex: 1;
     min-width: 0;
-    font-size: 14px;
+    font-size: 15px;
     white-space: pre-wrap;
     word-break: break-word;
   }
   .text-row .mini {
-    padding: 6px 8px;
+    padding: 6px 9px;
     font-size: 12px;
     background: #e5e7eb;
     color: #333;
@@ -152,6 +166,9 @@
   .color-row input[type=color] { width: 48px; height: 36px; border: 1px solid #ccc; border-radius: 6px; padding: 2px; background: #fff; }
   .toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 14px; }
   .toggle-row input[type=checkbox] { width: 20px; height: 20px; }
+  /* 編集モードでのみ表示する要素 */
+  .edit-only { display: none; }
+  body.edit .edit-only { display: block; }
   #empty { color: #999; font-size: 14px; text-align: center; padding: 12px 0; }
   #toast {
     position: fixed;
@@ -212,7 +229,7 @@
       <a class="display-link" href="/display" target="_blank">出力画面を開く →</a>
     </div>
     <div class="actions">
-      <button class="btn-clear" id="clearBtn">表示クリア</button>
+      <button class="btn-clear" id="editBtn">✏️ 編集</button>
     </div>
   </header>
 
@@ -223,12 +240,13 @@
     </div>
 
     <div class="card">
-      <h2>登録済みリスト（テキストを選んで「変更」→ 出力側に反映）</h2>
+      <h2 id="listTitle">タップで出力を切り替え</h2>
+      <div id="folderBar"></div>
       <div id="presetList"></div>
       <div id="empty">まだ登録がありません</div>
     </div>
 
-    <div class="card">
+    <div class="card edit-only">
       <h2>新規登録</h2>
       <form id="addForm">
         <label>画像（上に表示）</label>
@@ -236,21 +254,19 @@
         <img id="preview" alt="プレビュー">
         <label>メインテキスト（下に太字で表示・後から追加可能）</label>
         <textarea id="textInput" placeholder="表示するテキストを入力"></textarea>
-        <label>注釈（小さい赤字・任意）</label>
-        <input type="text" id="noteInput" placeholder="例: ※スタッフが美味しくいただきました">
+        <label>このテキストの注釈（小さい赤字・任意）</label>
+        <input type="text" id="noteInput" placeholder="例: きょうこう">
+        <label>フォルダ（任意・新しい名前で新規作成）</label>
+        <input type="text" id="folderInput" placeholder="例: クイズ1回目">
         <button type="submit" class="btn-primary">登録する</button>
       </form>
     </div>
 
-    <div class="card">
+    <div class="card edit-only">
       <h2>🎨 表示・保存の設定</h2>
       <div class="color-row">
         <label>背景色 <input type="color" id="bgColor" value="#ffffff"></label>
         <label>文字色 <input type="color" id="fgColor" value="#000000"></label>
-      </div>
-      <div class="toggle-row">
-        <input type="checkbox" id="noteToggle" checked>
-        <label for="noteToggle" style="margin:0">注釈を表示する（表示中いつでも切替・保存にも反映）</label>
       </div>
       <label>🎬 保存サイズ（動画素材用PNG）</label>
       <select id="sizeSel">
@@ -260,7 +276,7 @@
       </select>
     </div>
 
-    <div class="card">
+    <div class="card edit-only">
       <h2>⚙ 設定：合言葉の変更</h2>
       <label>新しい合言葉（4〜64文字）</label>
       <input type="text" id="newKeyInput" placeholder="新しい合言葉を入力" autocomplete="off">
@@ -275,17 +291,20 @@
   const imageInput = document.getElementById('imageInput');
   const textInput = document.getElementById('textInput');
   const noteInput = document.getElementById('noteInput');
+  const folderInput = document.getElementById('folderInput');
   const preview = document.getElementById('preview');
   const presetList = document.getElementById('presetList');
   const empty = document.getElementById('empty');
   const toast = document.getElementById('toast');
   const bgColor = document.getElementById('bgColor');
   const fgColor = document.getElementById('fgColor');
-  const noteToggle = document.getElementById('noteToggle');
+  const editBtn = document.getElementById('editBtn');
 
   let presets = [];
   let current = null;
   let settings = { bg: '#ffffff', fg: '#000000' };
+  let editMode = false;
+  let folderFilter = localStorage.getItem('folderFilter') || '__all__';
   const selectedText = {}; // presetId -> 選択中テキスト候補のindex
   const noteSel = {};      // presetId -> 注釈を出力に含めるか
   let toastTimer;
@@ -303,7 +322,16 @@
     toastTimer = setTimeout(() => toast.classList.remove('show'), 2000);
   }
 
-  // 選択画像のプレビュー
+  // 編集モード切替
+  editBtn.addEventListener('click', () => {
+    editMode = !editMode;
+    document.body.classList.toggle('edit', editMode);
+    editBtn.textContent = editMode ? '✅ 完了' : '✏️ 編集';
+    editBtn.classList.toggle('on', editMode);
+    document.getElementById('listTitle').textContent = editMode ? '編集モード（登録内容の編集・並び替え）' : 'タップで出力を切り替え';
+    renderList();
+  });
+
   imageInput.addEventListener('change', () => {
     const file = imageInput.files[0];
     if (file) {
@@ -317,7 +345,7 @@
   const isActive = (p) => {
     if (!current) return false;
     if (p.image) return current.image === p.image;
-    return !current.image && p.texts.includes(current.text);
+    return !current.image && p.texts.some((x) => x.t === current.text);
   };
 
   // 現在の出力のプチプレビュー
@@ -357,28 +385,69 @@
     if (!current) return;
     for (const p of presets) {
       if (current.image !== p.image) continue;
-      const idx = p.texts.indexOf(current.text);
-      if (idx >= 0) selectedText[p.id] = idx;
-      if (p.note) noteSel[p.id] = !!current.showNote;
+      const idx = p.texts.findIndex((x) => x.t === current.text);
+      if (idx >= 0) {
+        selectedText[p.id] = idx;
+        if (p.texts[idx].note) noteSel[p.id] = !!current.showNote;
+      }
     }
   }
 
-  // 選択中の内容が表示中と完全に同じか（同じなら「変更」ボタンを無効化）
-  function isSameAsCurrent(p) {
-    if (!current || current.image !== p.image) return false;
-    const selText = p.texts.length ? (p.texts[selectedText[p.id] || 0] || '') : '';
-    if ((current.text || '') !== selText) return false;
-    if (p.note && !!current.showNote !== !!noteSel[p.id]) return false;
-    return true;
+  // フォルダ一覧（登録データから導出）
+  function folderNames() {
+    return [...new Set(presets.map((p) => p.folder || '').filter(Boolean))];
+  }
+
+  function visiblePresets() {
+    if (folderFilter === '__all__') return presets;
+    if (folderFilter === '') return presets.filter((p) => !(p.folder || ''));
+    return presets.filter((p) => (p.folder || '') === folderFilter);
+  }
+
+  function renderFolderBar() {
+    const bar = document.getElementById('folderBar');
+    bar.innerHTML = '';
+    const folders = folderNames();
+    const chips = [['__all__', 'すべて'], ...folders.map((f) => [f, '📁 ' + f])];
+    if (folders.length && presets.some((p) => !(p.folder || ''))) chips.push(['', '未分類']);
+    if (!chips.some((c) => c[0] === folderFilter)) folderFilter = '__all__';
+    if (folders.length === 0) return; // フォルダ未使用ならタブ非表示
+    for (const [val, label] of chips) {
+      const b = document.createElement('button');
+      b.className = 'chip' + (folderFilter === val ? ' on' : '');
+      b.textContent = label;
+      b.onclick = () => {
+        folderFilter = val;
+        localStorage.setItem('folderFilter', val);
+        renderFolderBar();
+        renderList();
+      };
+      bar.appendChild(b);
+    }
+  }
+
+  // タップで即出力切替
+  async function tapShow(p, textIndex) {
+    const entry = textIndex >= 0 ? p.texts[textIndex] : null;
+    if (textIndex >= 0) selectedText[p.id] = textIndex;
+    const showNote = entry && entry.note ? (noteSel[p.id] !== false) : false;
+    // 表示中と同じ内容なら何もしない
+    if (current && current.image === p.image && (current.text || '') === (entry ? entry.t : '') &&
+        (!entry || !entry.note || !!current.showNote === showNote)) return;
+    await api('/api/show', { method: 'POST', body: JSON.stringify({ presetId: p.id, textIndex, showNote }), headers: { 'Content-Type': 'application/json' } });
+    showToast('出力を切り替えました');
+    await refresh();
   }
 
   function renderList() {
+    renderFolderBar();
     presetList.innerHTML = '';
-    empty.style.display = presets.length ? 'none' : 'block';
+    const visible = visiblePresets();
+    empty.style.display = visible.length ? 'none' : 'block';
 
     // デフォルト画面（何も表示しない）に戻すカード
     const defCard = document.createElement('div');
-    defCard.className = 'preset' + (current ? '' : ' active');
+    defCard.className = 'preset' + (current ? ' tappable' : ' active');
     const defTop = document.createElement('div');
     defTop.className = 'top';
     const defThumb = Object.assign(document.createElement('div'), { className: 'thumb noimg', textContent: '🔄' });
@@ -393,31 +462,26 @@
     }
     const defTxt = document.createElement('div');
     defTxt.style.fontSize = '14px';
-    defTxt.textContent = 'デフォルト画面（読み込み中表示に戻す）';
+    defTxt.style.padding = '8px 0';
+    defTxt.textContent = current ? 'デフォルト画面に戻す（タップ）' : 'デフォルト画面';
     defBody.appendChild(defTxt);
-    if (current) {
-      const defBtns = document.createElement('div');
-      defBtns.className = 'btns';
-      const defBtn = document.createElement('button');
-      defBtn.className = 'btn-show';
-      defBtn.textContent = '変更';
-      defBtn.onclick = async () => {
+    if (current && !editMode) {
+      defCard.onclick = async () => {
         await api('/api/clear', { method: 'POST' });
         showToast('デフォルト画面に戻しました');
         await refresh();
       };
-      defBtns.appendChild(defBtn);
-      defBody.appendChild(defBtns);
     }
     defTop.append(defThumb, defBody);
     defCard.appendChild(defTop);
     presetList.appendChild(defCard);
 
-    for (const p of presets) {
+    visible.forEach((p, vi) => {
       if (!(p.id in selectedText)) selectedText[p.id] = 0;
       if (!(p.id in noteSel)) noteSel[p.id] = true;
+      const active = isActive(p);
       const div = document.createElement('div');
-      div.className = 'preset' + (isActive(p) ? ' active' : '');
+      div.className = 'preset' + (active ? ' active' : '');
 
       const top = document.createElement('div');
       top.className = 'top';
@@ -427,116 +491,176 @@
 
       const body = document.createElement('div');
       body.className = 'body';
-      if (isActive(p)) {
+      if (active) {
         const badge = document.createElement('span');
         badge.className = 'badge';
         badge.textContent = '● 表示中';
         body.appendChild(badge);
       }
-      if (p.note) {
-        const noteLine = document.createElement('label');
-        noteLine.className = 'note-line';
-        noteLine.style.display = 'flex';
-        noteLine.style.alignItems = 'center';
-        noteLine.style.gap = '6px';
-        const chk = document.createElement('input');
-        chk.type = 'checkbox';
-        chk.checked = noteSel[p.id];
-        chk.onchange = () => { noteSel[p.id] = chk.checked; renderList(); };
-        const span = document.createElement('span');
-        span.textContent = '注釈を出す: ' + p.note;
-        noteLine.append(chk, span);
-        body.appendChild(noteLine);
+      if (p.folder && folderFilter === '__all__') {
+        const f = document.createElement('div');
+        f.style.cssText = 'font-size:11px;color:#888;margin-bottom:4px';
+        f.textContent = '📁 ' + p.folder;
+        body.appendChild(f);
       }
 
-      // テキスト候補（ラジオで1つだけ選択 = 太字系は同時に1つ）
-      p.texts.forEach((t, i) => {
+      // 画像のみ（テキストなし）のプリセットは行がないのでサムネタップで出力
+      if (!editMode && !p.texts.length) {
+        div.classList.add('tappable');
+        div.onclick = () => tapShow(p, -1);
+      }
+
+      // テキスト候補（通常モード: タップで即出力 / 編集モード: 編集ボタン表示）
+      p.texts.forEach((x, i) => {
         const row = document.createElement('div');
-        row.className = 'text-row';
-        const radio = document.createElement('input');
-        radio.type = 'radio';
-        radio.name = 'sel-' + p.id;
-        radio.checked = selectedText[p.id] === i;
-        radio.onchange = () => { selectedText[p.id] = i; renderList(); };
-        const txt = document.createElement('span');
-        txt.className = 'txt';
-        txt.textContent = t;
-        const edit = document.createElement('button');
-        edit.className = 'mini';
-        edit.textContent = '✎';
-        edit.onclick = async () => {
-          const v = prompt('テキストを編集', t);
-          if (v === null) return;
-          const texts = [...p.texts];
-          texts[i] = v.trim();
-          await putPreset(p.id, { textsJson: JSON.stringify(texts.filter(Boolean)) });
-        };
-        const del = document.createElement('button');
-        del.className = 'mini del';
-        del.textContent = '✕';
-        del.onclick = async () => {
-          if (!confirm('このテキスト候補を削除しますか？')) return;
-          const texts = p.texts.filter((_, j) => j !== i);
-          await putPreset(p.id, { textsJson: JSON.stringify(texts) });
-        };
-        row.append(radio, txt, edit, del);
+        const rowShown = active && current.text === x.t;
+        row.className = 'text-row' + (rowShown ? ' on' : '');
+        const txtWrap = document.createElement('div');
+        txtWrap.className = 'txt';
+        const txt = document.createElement('div');
+        txt.textContent = (rowShown ? '● ' : '') + x.t;
+        if (rowShown) txt.style.fontWeight = '700';
+        txtWrap.appendChild(txt);
+        if (x.note) {
+          const noteDiv = document.createElement('div');
+          noteDiv.className = 'note-line';
+          noteDiv.textContent = '注: ' + x.note;
+          txtWrap.appendChild(noteDiv);
+        }
+        row.appendChild(txtWrap);
+
+        if (editMode) {
+          const edit = document.createElement('button');
+          edit.className = 'mini';
+          edit.textContent = '✎';
+          edit.onclick = async () => {
+            const v = prompt('テキストを編集', x.t);
+            if (v === null || !v.trim()) return;
+            const texts = p.texts.map((y, j) => j === i ? { ...y, t: v.trim() } : y);
+            await putPreset(p.id, { textsJson: JSON.stringify(texts) });
+          };
+          const noteBtn = document.createElement('button');
+          noteBtn.className = 'mini';
+          noteBtn.textContent = '注';
+          noteBtn.style.color = '#dc2626';
+          noteBtn.onclick = async () => {
+            const v = prompt('このテキストの注釈（小さい赤字・空で削除）', x.note || '');
+            if (v === null) return;
+            const texts = p.texts.map((y, j) => j === i ? { ...y, note: v.trim() } : y);
+            await putPreset(p.id, { textsJson: JSON.stringify(texts) });
+          };
+          const del = document.createElement('button');
+          del.className = 'mini del';
+          del.textContent = '✕';
+          del.onclick = async () => {
+            if (!confirm('このテキスト候補を削除しますか？')) return;
+            const texts = p.texts.filter((_, j) => j !== i);
+            await putPreset(p.id, { textsJson: JSON.stringify(texts) });
+          };
+          row.append(edit, noteBtn, del);
+        } else {
+          row.onclick = () => tapShow(p, i);
+        }
         body.appendChild(row);
       });
 
-      const btns = document.createElement('div');
-      btns.className = 'btns';
+      // 注釈ありのテキストがある場合、出力に含めるかのチェック（通常モードのみ）
+      const selEntry = p.texts[selectedText[p.id] || 0];
+      const shownEntry = active ? p.texts.find((x) => x.t === current.text) : null;
+      const noteEntry = shownEntry || selEntry;
+      if (!editMode && noteEntry && noteEntry.note) {
+        const toggleRow = document.createElement('label');
+        toggleRow.className = 'note-line';
+        toggleRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:8px';
+        const chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.checked = active && shownEntry ? !!current.showNote : noteSel[p.id] !== false;
+        chk.onclick = (e) => e.stopPropagation();
+        chk.onchange = async () => {
+          noteSel[p.id] = chk.checked;
+          // 表示中の注釈はその場でON/OFF反映
+          if (active && shownEntry && shownEntry.note) {
+            await api('/api/note', { method: 'POST', body: JSON.stringify({ showNote: chk.checked }), headers: { 'Content-Type': 'application/json' } });
+            await refresh();
+          }
+        };
+        const span = document.createElement('span');
+        span.textContent = '注釈も出力する';
+        toggleRow.append(chk, span);
+        body.appendChild(toggleRow);
+      }
 
-      const showBtn = document.createElement('button');
-      showBtn.className = 'btn-show';
-      showBtn.textContent = current ? '変更' : '表示'; // 既に何か出力中なら「変更」
-      showBtn.disabled = isSameAsCurrent(p); // 表示中と同じ内容なら押せない
-      showBtn.onclick = async () => {
-        const textIndex = p.texts.length ? selectedText[p.id] : -1;
-        const showNote = p.note ? noteSel[p.id] : false;
-        await api('/api/show', { method: 'POST', body: JSON.stringify({ presetId: p.id, textIndex, showNote }), headers: { 'Content-Type': 'application/json' } });
-        showToast('出力側に反映しました');
-        await refresh();
-      };
+      // 編集モードの操作ボタン群
+      if (editMode) {
+        const btns = document.createElement('div');
+        btns.className = 'btns';
 
-      const addTextBtn = document.createElement('button');
-      addTextBtn.className = 'btn-edit';
-      addTextBtn.textContent = '＋テキスト';
-      addTextBtn.onclick = async () => {
-        const v = prompt('追加するテキスト');
-        if (!v || !v.trim()) return;
-        await putPreset(p.id, { textsJson: JSON.stringify([...p.texts, v.trim()]) });
-      };
+        const addTextBtn = document.createElement('button');
+        addTextBtn.className = 'btn-edit';
+        addTextBtn.textContent = '＋テキスト';
+        addTextBtn.onclick = async () => {
+          const v = prompt('追加するテキスト');
+          if (!v || !v.trim()) return;
+          await putPreset(p.id, { textsJson: JSON.stringify([...p.texts, { t: v.trim(), note: '' }]) });
+        };
 
-      const noteBtn = document.createElement('button');
-      noteBtn.className = 'btn-edit';
-      noteBtn.textContent = '注釈✎';
-      noteBtn.onclick = async () => {
-        const v = prompt('注釈（小さい赤字・空で削除）', p.note || '');
-        if (v === null) return;
-        await putPreset(p.id, { note: v.trim() });
-      };
+        const folderBtn = document.createElement('button');
+        folderBtn.className = 'btn-edit';
+        folderBtn.textContent = '📁移動';
+        folderBtn.onclick = async () => {
+          const names = folderNames();
+          const v = prompt('フォルダ名（空で未分類に戻す）' + (names.length ? '\n既存: ' + names.join(' / ') : ''), p.folder || '');
+          if (v === null) return;
+          await putPreset(p.id, { folder: v.trim() });
+        };
 
-      const saveBtn = document.createElement('button');
-      saveBtn.className = 'btn-edit';
-      saveBtn.textContent = '🎬保存';
-      saveBtn.onclick = () => exportPreset(p).catch((e) => showToast('保存失敗: ' + e.message));
+        const upBtn = document.createElement('button');
+        upBtn.className = 'btn-edit';
+        upBtn.textContent = '↑';
+        upBtn.disabled = vi === 0;
+        upBtn.onclick = () => movePreset(p, visible, vi, -1);
 
-      const delBtn = document.createElement('button');
-      delBtn.className = 'btn-del';
-      delBtn.textContent = '削除';
-      delBtn.onclick = async () => {
-        if (!confirm('この登録を削除しますか？')) return;
-        await api(`/api/presets/${p.id}`, { method: 'DELETE' });
-        showToast('削除しました');
-        await refresh();
-      };
+        const downBtn = document.createElement('button');
+        downBtn.className = 'btn-edit';
+        downBtn.textContent = '↓';
+        downBtn.disabled = vi === visible.length - 1;
+        downBtn.onclick = () => movePreset(p, visible, vi, 1);
 
-      btns.append(showBtn, addTextBtn, noteBtn, saveBtn, delBtn);
-      body.appendChild(btns);
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'btn-edit';
+        saveBtn.textContent = '🎬保存';
+        saveBtn.onclick = () => exportPreset(p).catch((e) => showToast('保存失敗: ' + e.message));
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn-del';
+        delBtn.textContent = '削除';
+        delBtn.onclick = async () => {
+          if (!confirm('この登録を削除しますか？')) return;
+          await api(`/api/presets/${p.id}`, { method: 'DELETE' });
+          showToast('削除しました');
+          await refresh();
+        };
+
+        btns.append(addTextBtn, folderBtn, upBtn, downBtn, saveBtn, delBtn);
+        body.appendChild(btns);
+      }
+
       top.append(thumb, body);
       div.appendChild(top);
       presetList.appendChild(div);
-    }
+    });
+  }
+
+  // 表示中フォルダ内で1つ上/下と入れ替え（全体順序に反映して保存）
+  async function movePreset(p, visible, vi, delta) {
+    const other = visible[vi + delta];
+    if (!other) return;
+    const ids = presets.map((x) => x.id);
+    const a = ids.indexOf(p.id);
+    const b = ids.indexOf(other.id);
+    [ids[a], ids[b]] = [ids[b], ids[a]];
+    await api('/api/reorder', { method: 'POST', body: JSON.stringify({ ids }), headers: { 'Content-Type': 'application/json' } });
+    await refresh();
   }
 
   // 書き込み系APIは合言葉ヘッダ付きで送る（401なら入力を促して1回だけ再試行）
@@ -576,7 +700,6 @@
     settings = s.settings || settings;
     bgColor.value = settings.bg;
     fgColor.value = settings.fg;
-    if (current) noteToggle.checked = !!current.showNote;
     syncSelectionToCurrent();
     renderPreview();
     renderList();
@@ -605,8 +728,9 @@
   // 出力画面と同じレイアウト（上:画像 / 下:太字テキスト / 注釈）を1枚のPNGに合成して保存
   async function exportPreset(p) {
     const [W, H] = document.getElementById('sizeSel').value.split('x').map(Number);
-    const text = p.texts.length ? p.texts[selectedText[p.id] || 0] : '';
-    const note = (p.note && noteSel[p.id]) ? p.note : '';
+    const entry = p.texts.length ? (p.texts[selectedText[p.id] || 0] || null) : null;
+    const text = entry ? entry.t : '';
+    const note = (entry && entry.note && noteSel[p.id] !== false) ? entry.note : '';
     const canvas = document.createElement('canvas');
     canvas.width = W;
     canvas.height = H;
@@ -617,7 +741,6 @@
     const vmin = Math.min(W, H);
     const family = '"Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif';
 
-    // 折り返し計算（フォントサイズ毎）
     const wrap = (str, fontPx) => {
       ctx.font = `700 ${fontPx}px ${family}`;
       const maxW = W * 0.92;
@@ -643,7 +766,7 @@
         mainLines[maxLines - 1] = mainLines[maxLines - 1].slice(0, -1) + '…';
       }
     }
-    const noteSize = Math.round(vmin * 0.04); // 注釈は小さめ
+    const noteSize = Math.round(vmin * 0.04);
     const noteLineH = Math.round(noteSize * 1.4);
     const noteLines = note ? wrap(note, noteSize) : [];
 
@@ -652,7 +775,6 @@
     const mainH = mainLines.length ? mainLines.length * mainLineH : 0;
     const noteH = noteLines.length ? noteLines.length * noteLineH : 0;
 
-    // 画像サイズを先に決め、画像+テキスト+注釈のグループ全体を縦中央に配置（テキストは写真の真下）
     let img = null, dw = 0, dh = 0;
     if (p.image) {
       img = new Image();
@@ -694,21 +816,15 @@
     showToast('PNGを保存しました');
   }
 
-  // 背景色・文字色の変更（選択したら即保存 → 出力側にも数秒で反映）
+  // 背景色・文字色の変更（選択したら即保存 → 出力側にも即反映）
   async function saveColors() {
     const res = await api('/api/settings', { method: 'POST', body: JSON.stringify({ bg: bgColor.value, fg: fgColor.value }), headers: { 'Content-Type': 'application/json' } });
     settings = res.settings;
+    renderPreview();
     showToast('色設定を保存しました');
   }
   bgColor.addEventListener('change', saveColors);
   fgColor.addEventListener('change', saveColors);
-
-  // 注釈の表示ON/OFF（表示中いつでも切替）
-  noteToggle.addEventListener('change', async () => {
-    await api('/api/note', { method: 'POST', body: JSON.stringify({ showNote: noteToggle.checked }), headers: { 'Content-Type': 'application/json' } });
-    showToast(noteToggle.checked ? '注釈を表示します' : '注釈を非表示にしました');
-    await refresh();
-  });
 
   // 合言葉の変更
   document.getElementById('changeKeyBtn').addEventListener('click', async () => {
@@ -721,12 +837,6 @@
     showToast('合言葉を変更しました');
   });
 
-  document.getElementById('clearBtn').addEventListener('click', async () => {
-    await api('/api/clear', { method: 'POST' });
-    showToast('表示をクリアしました');
-    await refresh();
-  });
-
   addForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!imageInput.files[0] && !textInput.value.trim()) {
@@ -737,6 +847,8 @@
     if (imageInput.files[0]) fd.append('image', imageInput.files[0]);
     fd.append('text', textInput.value);
     fd.append('note', noteInput.value);
+    const folder = folderInput.value.trim() || (folderFilter !== '__all__' ? folderFilter : '');
+    fd.append('folder', folder);
     await api('/api/presets', { method: 'POST', body: fd });
     addForm.reset();
     preview.style.display = 'none';

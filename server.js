@@ -22,11 +22,20 @@ try {
   console.error('DB読込失敗、初期化します:', e.message);
 }
 
-// 旧形式（text 単一）からの移行と既定値の補完
+// 旧形式からの移行と既定値の補完（texts は [{t, note}] 形式・注釈はテキストごと）
 for (const p of db.presets) {
   if (!Array.isArray(p.texts)) p.texts = p.text ? [p.text] : [];
   delete p.text;
-  if (typeof p.note !== 'string') p.note = '';
+  p.texts = p.texts
+    .map((x) => (typeof x === 'string' ? { t: x, note: '' } : { t: String(x.t || ''), note: String(x.note || '') }))
+    .filter((x) => x.t);
+  // 旧プリセット単位の注釈は「〇を含まない」テキスト（答え側）へ紐付けて移行
+  if (typeof p.note === 'string' && p.note.trim()) {
+    const target = p.texts.find((x) => !x.t.includes('〇')) || p.texts[p.texts.length - 1];
+    if (target && !target.note) target.note = p.note.trim();
+  }
+  delete p.note;
+  if (typeof p.folder !== 'string') p.folder = '';
 }
 if (!db.settings) db.settings = { bg: '#ffffff', fg: '#000000' };
 if (db.current && db.current.showNote === undefined) db.current.showNote = true;
@@ -107,8 +116,8 @@ app.post('/api/presets', auth, upload.single('image'), (req, res) => {
   const preset = {
     id: `${Date.now()}-${Math.round(Math.random() * 1e6)}`,
     image: req.file ? `/uploads/${req.file.filename}` : null,
-    texts: text ? [text] : [],
-    note,
+    texts: text ? [{ t: text, note }] : [],
+    folder: (req.body.folder || '').trim(),
   };
   db.presets.push(preset);
   saveDb();
@@ -124,22 +133,27 @@ app.put('/api/presets/:id', auth, upload.single('image'), (req, res) => {
   if (typeof req.body.textsJson === 'string') {
     try {
       const arr = JSON.parse(req.body.textsJson);
-      if (Array.isArray(arr)) preset.texts = arr.map((t) => String(t).trim()).filter(Boolean);
+      if (Array.isArray(arr)) {
+        preset.texts = arr
+          .map((x) => (typeof x === 'string' ? { t: x.trim(), note: '' } : { t: String(x.t || '').trim(), note: String(x.note || '').trim() }))
+          .filter((x) => x.t);
+      }
     } catch {
       return res.status(400).json({ error: 'textsJson が不正です' });
     }
   }
-  if (typeof req.body.note === 'string') preset.note = req.body.note.trim();
+  if (typeof req.body.folder === 'string') preset.folder = req.body.folder.trim();
   if (req.file) {
     deleteImageFile(preset.image);
     preset.image = `/uploads/${req.file.filename}`;
   }
   // 表示中のプリセットを編集した場合は表示にも反映
   if (wasShown) {
+    const entry = preset.texts.find((x) => x.t === db.current.text) || preset.texts[0] || null;
     db.current = {
       image: preset.image,
-      text: preset.texts.includes(db.current.text) ? db.current.text : (preset.texts[0] || ''),
-      note: preset.note,
+      text: entry ? entry.t : '',
+      note: entry ? entry.note : '',
       showNote: db.current.showNote,
     };
   }
@@ -163,14 +177,28 @@ app.post('/api/show', auth, (req, res) => {
   const preset = db.presets.find((p) => p.id === req.body.presetId);
   if (!preset) return res.status(404).json({ error: 'not found' });
   const textIndex = req.body.textIndex;
+  const entry = textIndex >= 0 ? (preset.texts[textIndex] || null) : null;
   db.current = {
     image: preset.image,
-    text: textIndex >= 0 ? (preset.texts[textIndex] || '') : '',
-    note: preset.note,
+    text: entry ? entry.t : '',
+    note: entry ? entry.note : '',
     showNote: typeof req.body.showNote === 'boolean' ? req.body.showNote : (db.current ? db.current.showNote : true),
   };
   saveDb();
   res.json({ current: db.current });
+});
+
+// プリセットの並び替え（idの配列順に更新）
+app.post('/api/reorder', auth, (req, res) => {
+  const ids = req.body.ids;
+  if (Array.isArray(ids)) {
+    const map = new Map(db.presets.map((p) => [p.id, p]));
+    const ordered = ids.map((id) => map.get(id)).filter(Boolean);
+    const rest = db.presets.filter((p) => !ids.includes(p.id));
+    db.presets = [...ordered, ...rest];
+    saveDb();
+  }
+  res.json({ ok: true });
 });
 
 // 表示クリア

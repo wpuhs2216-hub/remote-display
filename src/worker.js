@@ -13,12 +13,22 @@
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 
-// 旧形式（text 単一）からの移行と既定値の補完
+// 旧形式からの移行と既定値の補完
+// texts は [{ t: テキスト, note: 注釈 }] 形式（注釈はテキスト候補ごとに紐付け）
 function normalizeDb(db) {
   for (const p of db.presets) {
     if (!Array.isArray(p.texts)) p.texts = p.text ? [p.text] : [];
     delete p.text;
-    if (typeof p.note !== 'string') p.note = '';
+    p.texts = p.texts
+      .map((x) => (typeof x === 'string' ? { t: x, note: '' } : { t: String(x.t || ''), note: String(x.note || '') }))
+      .filter((x) => x.t);
+    // 旧プリセット単位の注釈は「〇を含まない」テキスト（答え側）へ紐付けて移行
+    if (typeof p.note === 'string' && p.note.trim()) {
+      const target = p.texts.find((x) => !x.t.includes('〇')) || p.texts[p.texts.length - 1];
+      if (target && !target.note) target.note = p.note.trim();
+    }
+    delete p.note;
+    if (typeof p.folder !== 'string') p.folder = '';
   }
   if (!db.settings) db.settings = { bg: '#ffffff', fg: '#000000' };
   if (db.current && db.current.showNote === undefined) db.current.showNote = true;
@@ -144,7 +154,7 @@ export class StateDO {
       if (hasImage) {
         try { image = await saveImage(this.env, file); } catch (e) { return json({ error: e.message }, 400); }
       }
-      const preset = { id: newId(), image, texts: text ? [text] : [], note };
+      const preset = { id: newId(), image, texts: text ? [{ t: text, note }] : [], folder: (fd.get('folder') || '').toString().trim() };
       db.presets.push(preset);
       await this.save();
       return json({ preset });
@@ -162,11 +172,15 @@ export class StateDO {
         if (typeof textsJson === 'string') {
           try {
             const arr = JSON.parse(textsJson);
-            if (Array.isArray(arr)) preset.texts = arr.map((t) => String(t).trim()).filter(Boolean);
+            if (Array.isArray(arr)) {
+              preset.texts = arr
+                .map((x) => (typeof x === 'string' ? { t: x.trim(), note: '' } : { t: String(x.t || '').trim(), note: String(x.note || '').trim() }))
+                .filter((x) => x.t);
+            }
           } catch { return json({ error: 'textsJson が不正です' }, 400); }
         }
-        const note = fd.get('note');
-        if (typeof note === 'string') preset.note = note.trim();
+        const folder = fd.get('folder');
+        if (typeof folder === 'string') preset.folder = folder.trim();
         const file = fd.get('image');
         if (file && typeof file === 'object' && file.size > 0) {
           await deleteImage(this.env, preset.image);
@@ -174,10 +188,11 @@ export class StateDO {
         }
         // 表示中のプリセットを編集した場合は表示にも反映
         if (wasShown) {
+          const entry = preset.texts.find((x) => x.t === db.current.text) || preset.texts[0] || null;
           db.current = {
             image: preset.image,
-            text: preset.texts.includes(db.current.text) ? db.current.text : (preset.texts[0] || ''),
-            note: preset.note,
+            text: entry ? entry.t : '',
+            note: entry ? entry.note : '',
             showNote: db.current.showNote,
           };
           this.broadcast();
@@ -202,15 +217,29 @@ export class StateDO {
       const { presetId, textIndex, showNote } = await req.json();
       const preset = db.presets.find((p) => p.id === presetId);
       if (!preset) return json({ error: 'not found' }, 404);
+      const entry = textIndex >= 0 ? (preset.texts[textIndex] || null) : null;
       db.current = {
         image: preset.image,
-        text: textIndex >= 0 ? (preset.texts[textIndex] || '') : '',
-        note: preset.note,
+        text: entry ? entry.t : '',
+        note: entry ? entry.note : '',
         showNote: typeof showNote === 'boolean' ? showNote : (db.current ? db.current.showNote : true),
       };
       await this.save();
       this.broadcast();
       return json({ current: db.current });
+    }
+
+    // プリセットの並び替え（idの配列順に更新）
+    if (method === 'POST' && path === '/api/reorder') {
+      const { ids } = await req.json();
+      if (Array.isArray(ids)) {
+        const map = new Map(db.presets.map((p) => [p.id, p]));
+        const ordered = ids.map((id) => map.get(id)).filter(Boolean);
+        const rest = db.presets.filter((p) => !ids.includes(p.id));
+        db.presets = [...ordered, ...rest];
+        await this.save();
+      }
+      return json({ ok: true });
     }
 
     if (method === 'POST' && path === '/api/clear') {
