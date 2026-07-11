@@ -1,0 +1,13 @@
+name = "remote-display"
+main = "src/worker.js"
+compatibility_date = "2026-07-01"
+
+[assets]
+directory = "public"
+binding = "ASSETS"
+run_worker_first = ["/api/*", "/uploads/*", "/"]
+
+# KV ネームスペースID はデプロイ時に `wrangler kv namespace create KV` の結果で置換する
+[[kv_namespaces]]
+binding = "KV"
+id = "PLACEHOLDER_KV_ID"

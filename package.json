@@ -1,0 +1,19 @@
+{
+  "name": "remote-display",
+  "version": "1.0.0",
+  "private": true,
+  "description": "登録した画像とテキストを遠隔で出力するWebアプリ（ローカルNode / Cloudflare Workers 両対応）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.2"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

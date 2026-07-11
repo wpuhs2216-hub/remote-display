@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>出力画面 - Remote Display</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: #000;
+    color: #fff;
+    font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+    overflow: hidden;
+  }
+  #stage {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+  /* 上: 画像エリア */
+  #imageArea {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2vmin;
+  }
+  #imageArea img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+  /* 下: テキストエリア */
+  #textArea {
+    flex: 0 0 auto;
+    max-height: 40dvh;
+    overflow-y: auto;
+    padding: 3vmin 4vmin 5vmin;
+    text-align: center;
+    font-size: clamp(20px, 5vmin, 64px);
+    font-weight: 700;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  /* 未表示時のプレースホルダ */
+  #idle {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: #555;
+    font-size: clamp(16px, 3vmin, 28px);
+  }
+  #connState {
+    position: fixed;
+    top: 10px;
+    right: 12px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #e33;
+    transition: background .3s;
+  }
+  #connState.ok { background: #2c5; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+  <div id="connState" title="接続状態"></div>
+
+  <div id="idle">
+    <div>表示待機中</div>
+    <div style="font-size:.6em">操作画面から送信すると表示されます</div>
+  </div>
+
+  <div id="stage" class="hidden">
+    <div id="imageArea"><img id="image" alt=""></div>
+    <div id="textArea"></div>
+  </div>
+
+<script>
+  const idle = document.getElementById('idle');
+  const stage = document.getElementById('stage');
+  const imageArea = document.getElementById('imageArea');
+  const image = document.getElementById('image');
+  const textArea = document.getElementById('textArea');
+  const connState = document.getElementById('connState');
+
+  // 現在の内容を画面に反映
+  function render(current) {
+    if (!current || (!current.image && !current.text)) {
+      stage.classList.add('hidden');
+      idle.classList.remove('hidden');
+      return;
+    }
+    idle.classList.add('hidden');
+    stage.classList.remove('hidden');
+
+    if (current.image) {
+      image.src = current.image;
+      imageArea.classList.remove('hidden');
+    } else {
+      image.removeAttribute('src');
+      imageArea.classList.add('hidden');
+    }
+    textArea.textContent = current.text || '';
+    textArea.classList.toggle('hidden', !current.text);
+    // 画像なしの場合はテキストを中央に大きく表示
+    textArea.style.maxHeight = current.image ? '40dvh' : 'none';
+    textArea.style.flex = current.image ? '0 0 auto' : '1';
+    textArea.style.display = current.text ? 'flex' : 'none';
+    textArea.style.alignItems = 'center';
+    textArea.style.justifyContent = 'center';
+  }
+
+  // 2秒間隔ポーリング（サーバレス環境でも動く方式。内容が変わった時だけ再描画）
+  let lastState = null;
+  async function poll() {
+    try {
+      const res = await fetch('/api/state', { cache: 'no-store' });
+      const data = await res.json();
+      connState.classList.add('ok');
+      const s = JSON.stringify(data.current);
+      if (s !== lastState) {
+        lastState = s;
+        render(data.current);
+      }
+    } catch (e) {
+      connState.classList.remove('ok');
+    } finally {
+      setTimeout(poll, 2000);
+    }
+  }
+  poll();
+
+  // タップでフルスクリーン切替（タブレット掲示用）
+  document.body.addEventListener('dblclick', () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen().catch(() => {});
+  });
+</script>
+</body>
+</html>

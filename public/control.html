@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>操作画面 - Remote Display</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #f4f5f7;
+    color: #222;
+    font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+    padding-bottom: 40px;
+  }
+  header {
+    background: #1a1d24;
+    color: #fff;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header h1 { font-size: 16px; font-weight: 700; }
+  header .actions { display: flex; gap: 8px; }
+  main { max-width: 720px; margin: 0 auto; padding: 16px; }
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+  }
+  .card h2 { font-size: 14px; color: #666; margin-bottom: 12px; }
+  label { display: block; font-size: 13px; color: #444; margin-bottom: 6px; }
+  input[type=file] { width: 100%; font-size: 14px; margin-bottom: 12px; }
+  textarea {
+    width: 100%;
+    min-height: 72px;
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-family: inherit;
+  }
+  button {
+    -webkit-tap-highlight-color: transparent;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .btn-primary { background: #2563eb; color: #fff; width: 100%; padding: 12px; font-size: 16px; }
+  .btn-show { background: #16a34a; color: #fff; }
+  .btn-edit { background: #e5e7eb; color: #333; }
+  .btn-del { background: #fee2e2; color: #b91c1c; }
+  .btn-clear { background: #444; color: #fff; font-size: 13px; padding: 8px 12px; }
+  #preview {
+    max-width: 100%;
+    max-height: 180px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    display: none;
+  }
+  .preset {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 12px;
+    border: 2px solid transparent;
+    border-radius: 10px;
+    background: #fafafa;
+    margin-bottom: 10px;
+  }
+  .preset.active { border-color: #16a34a; background: #f0fdf4; }
+  .preset .thumb {
+    width: 72px;
+    height: 72px;
+    flex: 0 0 72px;
+    object-fit: cover;
+    border-radius: 8px;
+    background: #ddd;
+  }
+  .preset .thumb.noimg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #999;
+    font-size: 11px;
+  }
+  .preset .body { flex: 1; min-width: 0; }
+  .preset .text {
+    font-size: 14px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .preset .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  .preset .btns button { padding: 8px 12px; font-size: 13px; }
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    color: #16a34a;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  #empty { color: #999; font-size: 14px; text-align: center; padding: 12px 0; }
+  #toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a1d24;
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity .3s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  #toast.show { opacity: 1; }
+  a.display-link { color: #93c5fd; font-size: 12px; text-decoration: none; }
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>📡 リモート表示 操作画面</h1>
+      <a class="display-link" href="/display" target="_blank">出力画面を開く →</a>
+    </div>
+    <div class="actions">
+      <button class="btn-clear" id="clearBtn">表示クリア</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2>新規登録（画像 + テキスト）</h2>
+      <form id="addForm">
+        <label>画像（上に表示）</label>
+        <input type="file" id="imageInput" name="image" accept="image/*">
+        <img id="preview" alt="プレビュー">
+        <label>テキスト（下に表示）</label>
+        <textarea id="textInput" name="text" placeholder="表示するテキストを入力"></textarea>
+        <button type="submit" class="btn-primary">登録する</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>登録済みリスト（「表示」を押すと出力側に反映）</h2>
+      <div id="presetList"></div>
+      <div id="empty">まだ登録がありません</div>
+    </div>
+  </main>
+
+  <div id="toast"></div>
+
+<script>
+  const addForm = document.getElementById('addForm');
+  const imageInput = document.getElementById('imageInput');
+  const textInput = document.getElementById('textInput');
+  const preview = document.getElementById('preview');
+  const presetList = document.getElementById('presetList');
+  const empty = document.getElementById('empty');
+  const toast = document.getElementById('toast');
+
+  let presets = [];
+  let current = null;
+  let toastTimer;
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 2000);
+  }
+
+  // 選択画像のプレビュー
+  imageInput.addEventListener('change', () => {
+    const file = imageInput.files[0];
+    if (file) {
+      preview.src = URL.createObjectURL(file);
+      preview.style.display = 'block';
+    } else {
+      preview.style.display = 'none';
+    }
+  });
+
+  const isActive = (p) => current && current.image === p.image && current.text === p.text;
+
+  function renderList() {
+    presetList.innerHTML = '';
+    empty.style.display = presets.length ? 'none' : 'block';
+    for (const p of presets) {
+      const div = document.createElement('div');
+      div.className = 'preset' + (isActive(p) ? ' active' : '');
+
+      const thumb = p.image
+        ? Object.assign(document.createElement('img'), { className: 'thumb', src: p.image })
+        : Object.assign(document.createElement('div'), { className: 'thumb noimg', textContent: '画像なし' });
+
+      const body = document.createElement('div');
+      body.className = 'body';
+      if (isActive(p)) {
+        const badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.textContent = '● 表示中';
+        body.appendChild(badge);
+      }
+      const text = document.createElement('div');
+      text.className = 'text';
+      text.textContent = p.text || '（テキストなし）';
+      body.appendChild(text);
+
+      const btns = document.createElement('div');
+      btns.className = 'btns';
+
+      const showBtn = document.createElement('button');
+      showBtn.className = 'btn-show';
+      showBtn.textContent = '表示';
+      showBtn.onclick = async () => {
+        await api('/api/show', { method: 'POST', body: JSON.stringify({ presetId: p.id }), headers: { 'Content-Type': 'application/json' } });
+        showToast('出力側に表示しました');
+        await refresh();
+      };
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn-edit';
+      editBtn.textContent = 'テキスト編集';
+      editBtn.onclick = async () => {
+        const newText = prompt('新しいテキスト', p.text || '');
+        if (newText === null) return;
+        const fd = new FormData();
+        fd.append('text', newText);
+        await api(`/api/presets/${p.id}`, { method: 'PUT', body: fd });
+        showToast('更新しました');
+        await refresh();
+      };
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn-del';
+      delBtn.textContent = '削除';
+      delBtn.onclick = async () => {
+        if (!confirm('この登録を削除しますか？')) return;
+        await api(`/api/presets/${p.id}`, { method: 'DELETE' });
+        showToast('削除しました');
+        await refresh();
+      };
+
+      btns.append(showBtn, editBtn, delBtn);
+      body.appendChild(btns);
+      div.append(thumb, body);
+      presetList.appendChild(div);
+    }
+  }
+
+  // 書き込み系APIは合言葉ヘッダ付きで送る（401なら入力を促して1回だけ再試行）
+  async function api(url, opts, retried) {
+    const options = opts ? { ...opts } : undefined;
+    if (options) {
+      options.headers = { ...(options.headers || {}), 'X-Admin-Key': localStorage.getItem('adminKey') || '' };
+    }
+    const res = await fetch(url, options);
+    if (res.status === 401 && options && !retried) {
+      const key = prompt('操作用の合言葉を入力してください');
+      if (key !== null) {
+        localStorage.setItem('adminKey', key);
+        return api(url, opts, true);
+      }
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      showToast('エラー: ' + (err.error || res.status));
+      throw new Error(err.error || res.status);
+    }
+    return res.json();
+  }
+
+  async function refresh() {
+    const [p, s] = await Promise.all([api('/api/presets'), api('/api/state')]);
+    presets = p.presets;
+    current = s.current;
+    renderList();
+  }
+
+  addForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!imageInput.files[0] && !textInput.value.trim()) {
+      showToast('画像かテキストを入力してください');
+      return;
+    }
+    const fd = new FormData();
+    if (imageInput.files[0]) fd.append('image', imageInput.files[0]);
+    fd.append('text', textInput.value);
+    await api('/api/presets', { method: 'POST', body: fd });
+    addForm.reset();
+    preview.style.display = 'none';
+    showToast('登録しました');
+    await refresh();
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', async () => {
+    await api('/api/clear', { method: 'POST' });
+    showToast('表示をクリアしました');
+    await refresh();
+  });
+
+  refresh();
+</script>
+</body>
+</html>
