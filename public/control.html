@@ -834,7 +834,7 @@
         mainLines[maxLines - 1] = mainLines[maxLines - 1].slice(0, -1) + '…';
       }
     }
-    const noteSize = Math.round(vmin * 0.04);
+    const noteSize = Math.round(vmin * 0.07); // 出力画面の 7vmin 相当
     const noteLineH = Math.round(noteSize * 1.4);
     const noteLines = note ? wrap(note, noteSize) : [];
 
