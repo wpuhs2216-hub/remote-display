@@ -681,6 +681,21 @@
           await putPreset(p.id, { folder: v.trim() });
         };
 
+        const imageBtn = document.createElement('button');
+        imageBtn.className = 'btn-edit';
+        imageBtn.textContent = '📷画像';
+        imageBtn.onclick = () => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = 'image/*';
+          input.onchange = async () => {
+            const file = input.files[0];
+            if (!file) return;
+            await putPreset(p.id, { image: file });
+          };
+          input.click();
+        };
+
         const upBtn = document.createElement('button');
         upBtn.className = 'btn-edit';
         upBtn.textContent = '↑';
@@ -708,7 +723,7 @@
           await refresh();
         };
 
-        btns.append(addTextBtn, folderBtn, upBtn, downBtn, saveBtn, delBtn);
+        btns.append(addTextBtn, folderBtn, imageBtn, upBtn, downBtn, saveBtn, delBtn);
         body.appendChild(btns);
       }
 
