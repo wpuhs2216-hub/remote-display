@@ -292,6 +292,7 @@
         <option value="1920x1080">横 1920×1080（16:9）</option>
         <option value="1080x1920">縦 1080×1920（9:16）</option>
         <option value="1080x1080">正方形 1080×1080</option>
+        <option value="1500x2100-nowrap">縦 1500×2100（5:7・改行なし）</option>
       </select>
     </div>
 
@@ -810,7 +811,9 @@
 
   // 出力画面と同じレイアウト（上:画像 / 下:太字テキスト / 注釈）を1枚のPNGに合成して保存
   async function exportPreset(p) {
-    const [W, H] = document.getElementById('sizeSel').value.split('x').map(Number);
+    const sizeVal = document.getElementById('sizeSel').value;
+    const noWrap = sizeVal.endsWith('-nowrap'); // メインテキストを改行せず1行に収める
+    const [W, H] = sizeVal.replace('-nowrap', '').split('x').map(Number);
     const entry = p.texts.length ? (p.texts[selectedText[p.id] || 0] || null) : null;
     const text = entry ? entry.t : '';
     const note = (entry && entry.note && noteSel[p.id] !== false) ? entry.note : '';
@@ -839,9 +842,14 @@
       return lines;
     };
 
-    const mainSize = Math.round(vmin * 0.14); // 出力画面の 14vmin 相当
+    let mainSize = Math.round(vmin * 0.14); // 出力画面の 14vmin 相当
+    if (noWrap && text) {
+      ctx.font = `700 ${mainSize}px ${family}`;
+      const w = ctx.measureText(text).width;
+      if (w > W * 0.92) mainSize = Math.floor(mainSize * (W * 0.92) / w);
+    }
     const mainLineH = Math.round(mainSize * 1.4);
-    let mainLines = text ? wrap(text, mainSize) : [];
+    let mainLines = text ? (noWrap ? [text] : wrap(text, mainSize)) : [];
     if (p.image && mainLines.length) {
       const maxLines = Math.max(1, Math.floor((H * 0.45) / mainLineH));
       if (mainLines.length > maxLines) {
