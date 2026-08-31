@@ -109,6 +109,28 @@
     padding: 10px 0 4px;
     word-break: break-word;
   }
+  /* 穴埋めタイル表示 */
+  #tileRow {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 14px 0 6px;
+  }
+  .tile {
+    width: clamp(38px, 10.5vw, 56px);
+    height: clamp(48px, 13vw, 68px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(24px, 7.5vw, 40px);
+    font-weight: 800;
+    border-radius: 10px;
+  }
+  .tile.fixed { background: var(--surface-2); border: 1.5px solid var(--line); }
+  .tile.blank { background: transparent; border: 2px dashed var(--primary); color: var(--gold); }
+  .tile.blank.filled { border-style: solid; border-color: var(--gold); }
+  .blank-hint { text-align: center; color: var(--text-2); font-size: 13px; margin-bottom: 8px; }
   .qnum { text-align: center; color: var(--text-2); font-size: 13px; font-weight: 700; margin-bottom: 6px; }
   /* 結果 */
   .result-mark { text-align: center; font-size: 72px; font-weight: 800; line-height: 1.1; }
@@ -190,8 +212,10 @@
         <div class="qnum" id="qnum"></div>
         <img id="qImage" alt="">
         <div id="qText"></div>
+        <div id="tileRow" class="hidden"></div>
         <div id="answerArea">
-          <label>あなたの回答（ひらがなでOK）</label>
+          <div class="blank-hint hidden" id="blankHint"></div>
+          <label id="answerLabel">あなたの回答（ひらがなでOK）</label>
           <input type="text" id="answerInput" placeholder="例: たまねぎ" maxlength="50" autocomplete="off">
           <button class="btn-primary" id="answerBtn">回答する</button>
           <div id="answeredInfo" class="hidden"></div>
@@ -276,9 +300,54 @@
     render();
   };
 
+  // ---- 穴埋め入力モード ----
+  function blankInfo() {
+    if (!quiz || !quiz.question || !quiz.question.blankMode) return null;
+    const chars = [...quiz.question.text];
+    return { chars, blanks: chars.filter((c) => c === '〇').length };
+  }
+  // 穴の文字を問題文に流し込んで完全な単語にする（表示用）
+  function reconstruct(typed) {
+    const bi = blankInfo();
+    if (!bi) return typed;
+    const t = [...typed];
+    let k = 0;
+    return bi.chars.map((c) => (c === '〇' ? (t[k++] || '＿') : c)).join('');
+  }
+  function renderTiles() {
+    const bi = blankInfo();
+    if (!bi) return;
+    const typed = [...$('answerInput').value.replace(/\s+/g, '')];
+    const row = $('tileRow');
+    row.innerHTML = '';
+    let k = 0;
+    for (const c of bi.chars) {
+      const tile = document.createElement('div');
+      if (c === '〇') {
+        const ch = typed[k++];
+        tile.className = 'tile blank' + (ch ? ' filled' : '');
+        tile.textContent = ch || '';
+      } else {
+        tile.className = 'tile fixed';
+        tile.textContent = c;
+      }
+      row.appendChild(tile);
+    }
+  }
+  $('answerInput').addEventListener('input', () => {
+    const bi = blankInfo();
+    if (!bi) return;
+    // 穴の数を超えた入力は切り詰める（IME確定後）
+    const v = [...$('answerInput').value.replace(/\s+/g, '')];
+    if (v.length > bi.blanks) $('answerInput').value = v.slice(0, bi.blanks).join('');
+    renderTiles();
+  });
+
   async function submitAnswer() {
-    const a = $('answerInput').value.trim();
+    const bi = blankInfo();
+    const a = $('answerInput').value.replace(/\s+/g, '').trim();
     if (!a) return showToast('回答を入力してください');
+    if (bi && [...a].length !== bi.blanks) return showToast(`〇の部分の${bi.blanks}文字を入力してください`);
     $('answerBtn').disabled = true;
     try {
       const res = await fetch('/api/quiz/answer', {
@@ -345,7 +414,22 @@
       $('qnum').textContent = `第${quiz.qnum}問`;
       if (quiz.question.image) { $('qImage').src = quiz.question.image; $('qImage').style.display = 'block'; }
       else $('qImage').style.display = 'none';
+
+      // 穴埋めモード: 問題文をタイル表示し、〇の部分だけ入力してもらう
+      const bi = blankInfo();
       $('qText').textContent = quiz.question.text || '';
+      $('qText').classList.toggle('hidden', !!bi);
+      $('tileRow').classList.toggle('hidden', !bi);
+      $('blankHint').classList.toggle('hidden', !bi);
+      if (bi) {
+        renderTiles();
+        $('blankHint').textContent = `〇の部分だけ入力してね（${bi.blanks}文字）`;
+        $('answerLabel').textContent = `〇に入る${bi.blanks}文字（ひらがなでOK）`;
+        $('answerInput').placeholder = bi.blanks === 1 ? '1文字' : `${bi.blanks}文字`;
+      } else {
+        $('answerLabel').textContent = 'あなたの回答（ひらがなでOK）';
+        $('answerInput').placeholder = '例: たまねぎ';
+      }
 
       const mine = savedAnswer();
       if (quiz.state === 'open') {
@@ -354,7 +438,7 @@
         rc.classList.add('hidden');
         $('answerBtn').textContent = mine ? '回答を修正する' : '回答する';
         $('answeredInfo').classList.toggle('hidden', !mine);
-        if (mine) $('answeredInfo').textContent = `回答済み: 「${mine}」（締切まで修正できます）`;
+        if (mine) $('answeredInfo').textContent = `回答済み: 「${bi ? reconstruct(mine) : mine}」（締切まで修正できます）`;
       } else if (quiz.state === 'closed') {
         banner.textContent = '🔒 回答締切！結果発表をお待ちください';
         $('answerArea').classList.add('hidden');

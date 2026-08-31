@@ -60,13 +60,20 @@ const quizDefault = () => ({
   pointsPerCorrect: 3,
 });
 
+// 穴埋め入力モード: 問題文に〇があり、正解と文字数が一致する場合のみ有効
+const isBlankMode = (qText, correctText) =>
+  !!qText && qText.includes('〇') && [...qText].length === [...(correctText || '')].length;
+
 // 参加者・進行画面に配る公開クイズ状態（正解は発表後のみ含める）
 function publicQuiz(db) {
   const q = db.quiz;
   let question = null;
   if (q.state !== 'idle' && q.current) {
     const p = db.presets.find((x) => x.id === q.current.presetId);
-    if (p) question = { image: p.image, text: (p.texts[q.current.questionIndex] || p.texts[0] || { t: '' }).t };
+    if (p) {
+      const qText = (p.texts[q.current.questionIndex] || p.texts[0] || { t: '' }).t;
+      question = { image: p.image, text: qText, blankMode: isBlankMode(qText, q.current.correctText) };
+    }
   }
   const pub = {
     state: q.state, qnum: q.qnum, hosts: q.hosts, teamNames: q.teamNames,
@@ -160,9 +167,24 @@ export class StateDO {
       const q = db.quiz;
       if (q.state !== 'open') return json({ error: '回答受付中ではありません' }, 400);
       if (typeof playerId !== 'string' || !playerId || playerId.length > 64) return json({ error: 'playerId が不正です' }, 400);
-      const a = (answer || '').toString().trim();
+      let a = (answer || '').toString().trim();
       if (!a || a.length > 50) return json({ error: '回答は1〜50文字で入力してください' }, 400);
       if (q.hosts.length && !q.hosts.some((h) => h.name === host)) return json({ error: '担当を選択してください' }, 400);
+      // 穴埋めモード: 穴の文字だけ送られてきたら問題文に流し込んで完全な単語に復元する
+      if (q.current) {
+        const p = db.presets.find((x) => x.id === q.current.presetId);
+        const qText = p ? (p.texts[q.current.questionIndex] || p.texts[0] || { t: '' }).t : '';
+        if (isBlankMode(qText, q.current.correctText)) {
+          const qChars = [...qText];
+          const blanks = qChars.filter((c) => c === '〇').length;
+          const aChars = [...a];
+          if (aChars.length === blanks) {
+            let k = 0;
+            a = qChars.map((c) => (c === '〇' ? aChars[k++] : c)).join('');
+          }
+          // 文字数が合わない場合は全文入力とみなしてそのまま保存（旧バージョンの画面とも互換）
+        }
+      }
       q.answers[playerId] = {
         name: (name || '').toString().slice(0, 20),
         host: (host || '').toString().slice(0, 20),
