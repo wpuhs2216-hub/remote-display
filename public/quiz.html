@@ -483,7 +483,8 @@
         $('answerArea').classList.add('hidden');
         rc.classList.remove('hidden');
         $('correctText').textContent = quiz.correct || '';
-        $('correctNote').textContent = quiz.note ? `※${quiz.note}` : '';
+        $('correctNote').textContent = (quiz.note ? `※${quiz.note}` : '') +
+          (quiz.alsoCorrect && quiz.alsoCorrect.length ? `（${quiz.alsoCorrect.join('、')} も正解）` : '');
         const r = quiz.results && quiz.results[playerId];
         const mark = $('resultMark');
         const earn = $('earn');

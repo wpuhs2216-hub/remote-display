@@ -131,6 +131,13 @@
     <!-- 回答一覧 -->
     <div class="card">
       <h2>📥 回答状況（リアルタイム）</h2>
+      <div id="extraCorrectArea" class="hidden">
+        <div id="extraCorrectList" style="font-size:14px;color:var(--live);font-weight:700;margin-bottom:8px"></div>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <input type="text" id="extraCorrectInput" placeholder="追加で正解にする言葉" style="margin-bottom:0">
+          <button class="btn-edit" id="extraCorrectBtn" style="flex:0 0 auto">＋正解に追加</button>
+        </div>
+      </div>
       <div id="answerList" style="min-height:24px"><span style="color:var(--text-2);font-size:14px">まだ回答はありません</span></div>
     </div>
 
@@ -255,14 +262,22 @@
     const cl = $('candList');
     cl.innerHTML = '';
     p.texts.forEach((x, i) => {
+      const isQ = x.t.includes('〇');
       const lb = document.createElement('label');
-      lb.className = 'cand' + (x.t.includes('〇') ? ' q' : '');
-      const r = document.createElement('input');
-      r.type = 'radio';
-      r.name = 'correct';
-      r.checked = selCorrect === i;
-      r.onchange = () => { selCorrect = i; };
-      lb.append(r, document.createTextNode(x.t + (x.t.includes('〇') ? '（問題文）' : '')));
+      lb.className = 'cand' + (isQ ? ' q' : '');
+      if (isQ) {
+        // 問題文は正解に選べない（表示のみ）
+        lb.style.opacity = '.6';
+        lb.style.cursor = 'default';
+        lb.append(document.createTextNode('❓ ' + x.t + '（問題文・正解には選べません）'));
+      } else {
+        const r = document.createElement('input');
+        r.type = 'radio';
+        r.name = 'correct';
+        r.checked = selCorrect === i;
+        r.onchange = () => { selCorrect = i; };
+        lb.append(r, document.createTextNode(x.t));
+      }
       if (x.note) {
         const n = document.createElement('span');
         n.className = 'note';
@@ -337,11 +352,25 @@
     if (!answers.length) {
       al.innerHTML = '<span style="color:var(--text-2);font-size:14px">まだ回答はありません</span>';
     } else {
+      const inRound = quiz.state === 'open' || quiz.state === 'closed';
       al.innerHTML = answers
         .sort((a, b) => a.at - b.at)
         .map((a) => `<div class="ans"><span><b>${esc(a.answer)}</b> <span class="who">${esc(a.name)}${a.table ? '｜' + esc(a.table) + '卓' : ''}（担当: ${esc(a.host)}）</span></span>` +
-          (quiz.state === 'revealed' ? `<span class="${a.ok ? 'ok' : 'ng'}">${a.ok ? '⭕ +' + quiz.points + 'P' : '❌'}</span>` : '') + '</div>')
+          (quiz.state === 'revealed'
+            ? `<span class="${a.ok ? 'ok' : 'ng'}">${a.ok ? '⭕ +' + quiz.points + 'P' : '❌'}</span>`
+            : (inRound ? `<button class="btn-edit" style="min-height:36px;padding:4px 10px;font-size:13px" onclick="addCorrect('${esc(a.answer).replace(/'/g, '&#39;')}')">⭕正解扱い</button>` : '')) + '</div>')
         .join('');
+    }
+
+    // 追加正解の管理UI（出題中のみ）
+    const inRound2 = quiz.state === 'open' || quiz.state === 'closed';
+    $('extraCorrectArea').classList.toggle('hidden', !inRound2);
+    if (inRound2) {
+      const cur = adminQuiz && adminQuiz.current;
+      const extras = (cur && cur.extraCorrect) || [];
+      $('extraCorrectList').innerHTML = cur
+        ? `正解: ${esc(cur.correctText)}` + (extras.length ? ` ＋ 追加正解: ${extras.map(esc).join('、')}` : '')
+        : '';
     }
 
     // 卓別集計（累計 + 現在の問題の回答数）
@@ -364,6 +393,21 @@
       : '<span style="color:var(--text-2);font-size:14px">まだ集計はありません</span>';
   }
   const esc = (s) => (s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // 追加正解の登録（回答一覧のボタン・手入力の両方から呼ばれる）
+  window.addCorrect = async (text) => {
+    try {
+      await post('/api/quiz/add-correct', { text });
+      showToast(`「${text}」を正解に追加しました`);
+      refreshAdmin();
+    } catch (e) { showToast(e.message); }
+  };
+  $('extraCorrectBtn').onclick = () => {
+    const t = $('extraCorrectInput').value.trim();
+    if (!t) return showToast('言葉を入力してください');
+    $('extraCorrectInput').value = '';
+    addCorrect(t);
+  };
 
   async function refreshAdmin() {
     try {

@@ -83,6 +83,7 @@ function publicQuiz(db) {
   if (q.state === 'revealed' && q.current) {
     pub.correct = q.current.correctText;
     pub.note = q.current.correctNote || '';
+    if (q.current.extraCorrect && q.current.extraCorrect.length) pub.alsoCorrect = q.current.extraCorrect;
     pub.results = {};
     for (const [pid, a] of Object.entries(q.answers)) {
       pub.results[pid] = { ok: !!a.ok, answer: a.answer, name: a.name, host: a.host };
@@ -227,6 +228,9 @@ export class StateDO {
         const p = db.presets.find((x) => x.id === presetId);
         if (!p) return json({ error: 'not found' }, 404);
         const ci = p.texts[correctIndex] ? correctIndex : 0;
+        if (p.texts[ci] && p.texts[ci].t.includes('〇')) {
+          return json({ error: '問題文（〇入り）は正解に指定できません' }, 400);
+        }
         // 問題文は指定がなければ「〇を含むテキスト」を自動選択
         let qi = questionIndex;
         if (!p.texts[qi]) qi = Math.max(0, p.texts.findIndex((x) => x.t.includes('〇')));
@@ -234,6 +238,7 @@ export class StateDO {
           presetId, questionIndex: qi, correctIndex: ci,
           correctText: p.texts[ci] ? p.texts[ci].t : '',
           correctNote: p.texts[ci] ? p.texts[ci].note : '',
+          extraCorrect: [],
         };
         q.answers = {};
         q.state = 'open';
@@ -241,6 +246,24 @@ export class StateDO {
         await this.save();
         this.broadcast();
         return json({ quiz: publicQuiz(db) });
+      }
+
+      // 追加の正解をリアルタイム登録（発表前のみ・想定外の正解対応）
+      if (action === 'add-correct') {
+        const { text } = await req.json();
+        const t = (text || '').toString().trim();
+        if (!t || t.length > 50) return json({ error: '1〜50文字で指定してください' }, 400);
+        if (t.includes('〇')) return json({ error: '〇入りのテキストは正解にできません' }, 400);
+        if (!q.current || q.state === 'revealed' || q.state === 'idle') {
+          return json({ error: '出題中（発表前）のみ追加できます' }, 400);
+        }
+        if (!q.current.extraCorrect) q.current.extraCorrect = [];
+        const key = normAnswer(t);
+        if (key !== normAnswer(q.current.correctText) && !q.current.extraCorrect.some((x) => normAnswer(x) === key)) {
+          q.current.extraCorrect.push(t);
+          await this.save();
+        }
+        return json({ quiz: { ...publicQuiz(db), current: q.current } });
       }
 
       // 回答締切
@@ -254,10 +277,10 @@ export class StateDO {
       // 結果発表（自動判定 + 担当へ加点 + 卓別集計）
       if (action === 'reveal') {
         if (q.current && (q.state === 'open' || q.state === 'closed')) {
-          const key = normAnswer(q.current.correctText);
+          const keys = [q.current.correctText, ...(q.current.extraCorrect || [])].map(normAnswer);
           if (!q.tableStats) q.tableStats = {};
           for (const a of Object.values(q.answers)) {
-            a.ok = normAnswer(a.answer) === key;
+            a.ok = keys.includes(normAnswer(a.answer));
             if (a.ok && a.host) q.scores[a.host] = (q.scores[a.host] || 0) + q.pointsPerCorrect;
             const t = a.table || '不明';
             if (!q.tableStats[t]) q.tableStats[t] = { answers: 0, correct: 0 };
