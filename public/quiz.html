@@ -208,7 +208,6 @@
       <div class="card" id="scoreCard">
         <h2>スコアボード</h2>
         <div class="teams" id="teams"></div>
-        <div id="hostScores"></div>
       </div>
 
       <button class="btn-ghost" id="editProfile">名前・担当を変更</button>
@@ -313,14 +312,6 @@
         <div class="tname">${quiz.teamNames[t] || t}${lead === t ? ' 👑' : ''}</div>
         <div class="tpts">${totals[t]}<small style="font-size:14px">P</small></div>
       </div>`).join('');
-    const rows = [...quiz.hosts]
-      .map((h) => ({ ...h, pts: quiz.scores[h.name] || 0 }))
-      .sort((a, b) => b.pts - a.pts);
-    $('hostScores').innerHTML = rows.map((h) =>
-      `<div class="hostrow ${h.name === myHost() ? 'mine' : ''}">
-        <span><span class="tm">${quiz.teamNames[h.team] || h.team}</span>${h.name}${h.name === myHost() ? ' ★' : ''}</span>
-        <span class="pts">${h.pts}P</span>
-      </div>`).join('') || '<div style="color:var(--text-2);font-size:14px;text-align:center;padding:8px 0">担当が未設定です</div>';
   }
 
   function render() {

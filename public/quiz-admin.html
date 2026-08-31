@@ -138,7 +138,6 @@
     <div class="card">
       <h2>🏆 スコアボード（正解 +<span id="ptsLabel">3</span>P 自動計算）</h2>
       <div class="teams" id="teams"></div>
-      <div id="hostScores"></div>
     </div>
 
     <!-- 担当設定 -->
@@ -318,12 +317,6 @@
     for (const h of quiz.hosts) totals[h.team] += quiz.scores[h.name] || 0;
     $('teams').innerHTML = ['A', 'B'].map((t) =>
       `<div class="team ${t.toLowerCase()}"><div style="font-size:13px;color:var(--text-2);font-weight:700">${quiz.teamNames[t] || t}</div><div class="tpts">${totals[t]}P</div></div>`).join('');
-    $('hostScores').innerHTML = [...quiz.hosts]
-      .map((h) => ({ ...h, pts: quiz.scores[h.name] || 0 }))
-      .sort((a, b) => b.pts - a.pts)
-      .map((h) => `<div class="hostrow"><span>${quiz.teamNames[h.team] || h.team}｜${h.name}</span><b>${h.pts}P</b></div>`)
-      .join('') || '<div style="color:var(--text-2);font-size:14px">担当が未設定です</div>';
-
     // 担当フォーム（編集中でなければ同期）
     if (!hostsFormTouched) {
       $('teamAHosts').value = quiz.hosts.filter((h) => h.team === 'A').map((h) => h.name).join('\n');
