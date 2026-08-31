@@ -116,6 +116,11 @@
     <div id="noteArea"></div>
   </div>
 
+  <!-- 解説動画の全画面再生 -->
+  <div id="videoWrap" class="hidden" style="height:100dvh;display:flex;align-items:center;justify-content:center;">
+    <video id="video" playsinline style="max-width:100%;max-height:100%;"></video>
+  </div>
+
 <script>
   const idle = document.getElementById('idle');
   const stage = document.getElementById('stage');
@@ -127,11 +132,32 @@
 
   // 現在の内容と色設定を画面に反映
   // 画像は事前にデコード完了させてからテキストと同時に切り替える（画像だけ遅れて出るのを防ぐ）
+  const videoWrap = document.getElementById('videoWrap');
+  const video = document.getElementById('video');
+
   let renderSeq = 0;
   async function render(state) {
     const seq = ++renderSeq;
     const current = state.current;
     const s = state.settings || { bg: '#ffffff', fg: '#000000' };
+
+    // 解説動画モード（画像+テキストの代わりに全画面再生）
+    if (current && current.video) {
+      document.body.style.background = s.bg;
+      idle.classList.add('hidden');
+      stage.classList.add('hidden');
+      videoWrap.classList.remove('hidden');
+      if (video.getAttribute('src') !== current.video) {
+        video.src = current.video;
+        video.currentTime = 0;
+      }
+      video.play().catch(() => {});
+      return;
+    }
+    if (!videoWrap.classList.contains('hidden')) {
+      videoWrap.classList.add('hidden');
+      video.pause();
+    }
 
     if (current && current.image) {
       const pre = new Image();
@@ -172,7 +198,8 @@
   let lastState = null;
   let wsOk = false;
   function apply(data) {
-    const s = JSON.stringify(data);
+    // quiz など表示に関係ないフィールドの更新では再描画しない
+    const s = JSON.stringify({ current: data.current, settings: data.settings });
     if (s !== lastState) {
       lastState = s;
       render(data);

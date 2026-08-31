@@ -32,18 +32,62 @@ function normalizeDb(db) {
   }
   if (!db.settings) db.settings = { bg: '#ffffff', fg: '#000000' };
   if (db.current && db.current.showNote === undefined) db.current.showNote = true;
+  if (!db.quiz) db.quiz = quizDefault();
   return db;
 }
 
 const newId = () => `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
 const isHexColor = (v) => /^#[0-9a-fA-F]{6}$/.test(v || '');
 
-// 画像を KV に保存してパスを返す
+// 回答判定用の正規化（全角半角統一・空白除去・カタカナ→ひらがな・小文字化）
+const normAnswer = (s) => (s || '')
+  .normalize('NFKC')
+  .replace(/\s+/g, '')
+  .replace(/[ァ-ヶ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60))
+  .toLowerCase();
+
+// クイズ大会の初期状態
+const quizDefault = () => ({
+  hosts: [],                                   // [{name, team: 'A'|'B'}]
+  teamNames: { A: 'チームA', B: 'チームB' },
+  state: 'idle',                               // idle | open | closed | revealed
+  qnum: 0,
+  current: null,                               // {presetId, questionIndex, correctIndex, correctText, correctNote}
+  answers: {},                                 // playerId -> {name, host, answer, at, ok?}
+  scores: {},                                  // 担当名 -> 累計ポイント
+  pointsPerCorrect: 3,
+});
+
+// 参加者・進行画面に配る公開クイズ状態（正解は発表後のみ含める）
+function publicQuiz(db) {
+  const q = db.quiz;
+  let question = null;
+  if (q.state !== 'idle' && q.current) {
+    const p = db.presets.find((x) => x.id === q.current.presetId);
+    if (p) question = { image: p.image, text: (p.texts[q.current.questionIndex] || p.texts[0] || { t: '' }).t };
+  }
+  const pub = {
+    state: q.state, qnum: q.qnum, hosts: q.hosts, teamNames: q.teamNames,
+    question, answered: Object.keys(q.answers).length,
+    scores: q.scores, points: q.pointsPerCorrect,
+  };
+  if (q.state === 'revealed' && q.current) {
+    pub.correct = q.current.correctText;
+    pub.note = q.current.correctNote || '';
+    pub.results = {};
+    for (const [pid, a] of Object.entries(q.answers)) {
+      pub.results[pid] = { ok: !!a.ok, answer: a.answer, name: a.name, host: a.host };
+    }
+  }
+  return pub;
+}
+
+// 画像・動画を KV に保存してパスを返す
 async function saveImage(env, file) {
   const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
   const key = `img:${newId()}.${ext}`;
   const buf = await file.arrayBuffer();
-  if (buf.byteLength > 20 * 1024 * 1024) throw new Error('画像は20MBまでです');
+  if (buf.byteLength > 20 * 1024 * 1024) throw new Error('ファイルは20MBまでです');
   await env.KV.put(key, buf, { metadata: { ct: file.type } });
   return `/uploads/${key.slice(4)}`;
 }
@@ -73,9 +117,9 @@ export class StateDO {
     await this.state.storage.put('db', this._db);
   }
 
-  // 接続中の全出力画面へ即時プッシュ
+  // 接続中の全画面（出力・操作・クイズ）へ即時プッシュ
   broadcast() {
-    const msg = JSON.stringify({ current: this._db.current, settings: this._db.settings });
+    const msg = JSON.stringify({ current: this._db.current, settings: this._db.settings, quiz: publicQuiz(this._db) });
     for (const ws of this.state.getWebSockets()) {
       try { ws.send(msg); } catch {}
     }
@@ -95,7 +139,7 @@ export class StateDO {
     if (path === '/ws') {
       const pair = new WebSocketPair();
       this.state.acceptWebSocket(pair[1]);
-      pair[1].send(JSON.stringify({ current: db.current, settings: db.settings }));
+      pair[1].send(JSON.stringify({ current: db.current, settings: db.settings, quiz: publicQuiz(db) }));
       return new Response(null, { status: 101, webSocket: pair[0] });
     }
 
@@ -103,13 +147,119 @@ export class StateDO {
     if (method === 'GET') {
       if (path === '/api/state') return json({ current: db.current, settings: db.settings });
       if (path === '/api/presets') return json({ presets: db.presets });
+      if (path === '/api/quiz/state') return json({ quiz: publicQuiz(db) });
       return json({ error: 'not found' }, 404);
+    }
+
+    // 参加者の回答送信（合言葉不要・受付中のみ）
+    if (method === 'POST' && path === '/api/quiz/answer') {
+      const { playerId, name, host, answer } = await req.json();
+      const q = db.quiz;
+      if (q.state !== 'open') return json({ error: '回答受付中ではありません' }, 400);
+      if (typeof playerId !== 'string' || !playerId || playerId.length > 64) return json({ error: 'playerId が不正です' }, 400);
+      const a = (answer || '').toString().trim();
+      if (!a || a.length > 50) return json({ error: '回答は1〜50文字で入力してください' }, 400);
+      if (q.hosts.length && !q.hosts.some((h) => h.name === host)) return json({ error: '担当を選択してください' }, 400);
+      q.answers[playerId] = { name: (name || '').toString().slice(0, 20), host: (host || '').toString().slice(0, 20), answer: a, at: Date.now() };
+      await this.save();
+      this.broadcast();
+      return json({ ok: true });
     }
 
     // 書き込み系は合言葉必須（UIで変更された値が優先。未設定時はローカル開発とみなし素通し）
     const adminKey = db.adminKey || this.env.ADMIN_KEY;
     if (adminKey && req.headers.get('X-Admin-Key') !== adminKey) {
       return json({ error: '合言葉が違います' }, 401);
+    }
+
+    // ---- クイズ大会（進行管理・要合言葉） ----
+    if (method === 'POST' && path.startsWith('/api/quiz/')) {
+      const q = db.quiz;
+      const action = path.slice('/api/quiz/'.length);
+
+      // 担当・チーム設定（既存スコアは名前一致で引き継ぐ）
+      if (action === 'hosts') {
+        const { teamA, teamB, teamNames } = await req.json();
+        const mk = (arr, team) => (Array.isArray(arr) ? arr : [])
+          .map((n) => (n || '').toString().trim()).filter(Boolean)
+          .map((name) => ({ name: name.slice(0, 20), team }));
+        q.hosts = [...mk(teamA, 'A'), ...mk(teamB, 'B')];
+        if (teamNames && typeof teamNames.A === 'string') q.teamNames.A = teamNames.A.slice(0, 20) || 'チームA';
+        if (teamNames && typeof teamNames.B === 'string') q.teamNames.B = teamNames.B.slice(0, 20) || 'チームB';
+        await this.save();
+        this.broadcast();
+        return json({ quiz: publicQuiz(db) });
+      }
+
+      // 出題開始（回答受付オープン）
+      if (action === 'start') {
+        const { presetId, correctIndex, questionIndex } = await req.json();
+        const p = db.presets.find((x) => x.id === presetId);
+        if (!p) return json({ error: 'not found' }, 404);
+        const ci = p.texts[correctIndex] ? correctIndex : 0;
+        // 問題文は指定がなければ「〇を含むテキスト」を自動選択
+        let qi = questionIndex;
+        if (!p.texts[qi]) qi = Math.max(0, p.texts.findIndex((x) => x.t.includes('〇')));
+        q.current = {
+          presetId, questionIndex: qi, correctIndex: ci,
+          correctText: p.texts[ci] ? p.texts[ci].t : '',
+          correctNote: p.texts[ci] ? p.texts[ci].note : '',
+        };
+        q.answers = {};
+        q.state = 'open';
+        q.qnum += 1;
+        await this.save();
+        this.broadcast();
+        return json({ quiz: publicQuiz(db) });
+      }
+
+      // 回答締切
+      if (action === 'close') {
+        if (q.state === 'open') q.state = 'closed';
+        await this.save();
+        this.broadcast();
+        return json({ quiz: publicQuiz(db) });
+      }
+
+      // 結果発表（自動判定 + 担当へ加点）
+      if (action === 'reveal') {
+        if (q.current && (q.state === 'open' || q.state === 'closed')) {
+          const key = normAnswer(q.current.correctText);
+          for (const a of Object.values(q.answers)) {
+            a.ok = normAnswer(a.answer) === key;
+            if (a.ok && a.host) q.scores[a.host] = (q.scores[a.host] || 0) + q.pointsPerCorrect;
+          }
+          q.state = 'revealed';
+          await this.save();
+          this.broadcast();
+        }
+        return json({ quiz: publicQuiz(db) });
+      }
+
+      // 待機に戻す（次の問題へ）
+      if (action === 'idle') {
+        q.state = 'idle';
+        q.current = null;
+        q.answers = {};
+        await this.save();
+        this.broadcast();
+        return json({ quiz: publicQuiz(db) });
+      }
+
+      // スコア・進行の全リセット（担当設定は残す）
+      if (action === 'reset') {
+        db.quiz = { ...quizDefault(), hosts: q.hosts, teamNames: q.teamNames };
+        await this.save();
+        this.broadcast();
+        return json({ quiz: publicQuiz(db) });
+      }
+
+      // 進行用の詳細状態（回答一覧つき）
+      if (action === 'admin-state') {
+        return json({ quiz: { ...publicQuiz(db), answers: q.answers, current: q.current } });
+      }
+
+      return json({ error: 'not found' }, 404);
     }
 
     // 合言葉の変更
@@ -170,6 +320,10 @@ export class StateDO {
         try { image = await saveImage(this.env, file); } catch (e) { return json({ error: e.message }, 400); }
       }
       const preset = { id: newId(), image, texts, folder: (fd.get('folder') || '').toString().trim() };
+      const vfile = fd.get('video');
+      if (vfile && typeof vfile === 'object' && vfile.size > 0) {
+        try { preset.video = await saveImage(this.env, vfile); } catch (e) { return json({ error: e.message }, 400); }
+      }
       db.presets.push(preset);
       await this.save();
       return json({ preset });
@@ -201,6 +355,12 @@ export class StateDO {
           await deleteImage(this.env, preset.image);
           try { preset.image = await saveImage(this.env, file); } catch (e) { return json({ error: e.message }, 400); }
         }
+        // 解説動画の添付・差し替え
+        const vfile = fd.get('video');
+        if (vfile && typeof vfile === 'object' && vfile.size > 0) {
+          await deleteImage(this.env, preset.video);
+          try { preset.video = await saveImage(this.env, vfile); } catch (e) { return json({ error: e.message }, 400); }
+        }
         // 表示中のプリセットを編集した場合は表示にも反映
         if (wasShown) {
           const entry = preset.texts.find((x) => x.t === db.current.text) || preset.texts[0] || null;
@@ -223,15 +383,23 @@ export class StateDO {
           this.broadcast();
         }
         await deleteImage(this.env, preset.image);
+        await deleteImage(this.env, preset.video);
         await this.save();
         return json({ ok: true });
       }
     }
 
     if (method === 'POST' && path === '/api/show') {
-      const { presetId, textIndex, showNote } = await req.json();
+      const { presetId, textIndex, showNote, video } = await req.json();
       const preset = db.presets.find((p) => p.id === presetId);
       if (!preset) return json({ error: 'not found' }, 404);
+      // 解説動画の出力（画像+テキストの代わりに動画を全画面再生）
+      if (video === true && preset.video) {
+        db.current = { image: null, text: '', note: '', showNote: false, video: preset.video };
+        await this.save();
+        this.broadcast();
+        return json({ current: db.current });
+      }
       const entry = textIndex >= 0 ? (preset.texts[textIndex] || null) : null;
       db.current = {
         image: preset.image,
@@ -289,6 +457,10 @@ export default {
     }
 
     if (path === '/') return Response.redirect(`${url.origin}/control`, 302);
+    // 拡張子なしURL → 対応する静的ページ（アセット未ヒット時に到達する）
+    if (path === '/quiz' || path === '/quiz-admin') {
+      return env.ASSETS.fetch(new Request(`${url.origin}${path}.html`, req));
+    }
     return env.ASSETS.fetch(req);
   },
 };

@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>クイズ進行管理</title>
+<meta name="theme-color" content="#171a21">
+<style>
+  :root {
+    --bg: #eef0f4; --surface: #fff; --surface-2: #f7f8fa; --line: #e3e6eb;
+    --text: #1b1f27; --text-2: #6b7280; --primary: #2563eb;
+    --live: #16a34a; --live-soft: #ecfdf3; --danger: #dc2626; --danger-soft: #fee2e2;
+    --gold: #d97706; --radius: 14px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text); font-size: 16px; line-height: 1.5;
+    font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+    padding-bottom: max(48px, env(safe-area-inset-bottom));
+  }
+  header {
+    background: #171a21; color: #fff;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  header h1 { font-size: 16px; font-weight: 700; }
+  header a { color: #9ec2ff; font-size: 13px; text-decoration: none; }
+  main { max-width: 720px; margin: 0 auto; padding: 12px 12px 0; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+  .card h2 { font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 12px; letter-spacing: .02em; }
+  label { display: block; font-size: 13px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+  textarea, input[type=text] {
+    width: 100%; padding: 10px 12px; font-size: 16px; border: 1.5px solid var(--line);
+    border-radius: 10px; margin-bottom: 10px; background: var(--surface); color: var(--text); font-family: inherit;
+  }
+  textarea { min-height: 96px; }
+  button {
+    -webkit-tap-highlight-color: transparent; border: none; border-radius: 10px;
+    min-height: 48px; padding: 10px 16px; font-size: 15px; font-weight: 700;
+    cursor: pointer; touch-action: manipulation; font-family: inherit;
+    transition: transform .08s ease, filter .08s ease;
+  }
+  button:active { transform: scale(.97); filter: brightness(.94); }
+  button:disabled { opacity: .35; transform: none; }
+  .btn-primary { background: var(--primary); color: #fff; width: 100%; }
+  .btn-gold { background: #f59e0b; color: #fff; width: 100%; }
+  .btn-green { background: var(--live); color: #fff; width: 100%; }
+  .btn-gray { background: #3a4150; color: #fff; width: 100%; }
+  .btn-edit { background: var(--surface-2); color: var(--text); border: 1.5px solid var(--line); }
+  .btn-del { background: var(--danger-soft); color: var(--danger); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  /* 進行ステータス */
+  .stateBig {
+    text-align: center; font-size: 20px; font-weight: 800;
+    padding: 16px; border-radius: 12px; margin-bottom: 12px;
+  }
+  .stateBig.idle { background: var(--surface-2); color: var(--text-2); }
+  .stateBig.open { background: var(--live-soft); color: var(--live); border: 2px solid var(--live); }
+  .stateBig.closed { background: #fef3c7; color: var(--gold); border: 2px solid #f59e0b; }
+  .stateBig.revealed { background: #eff4ff; color: var(--primary); border: 2px solid var(--primary); }
+  .count { font-size: 40px; font-weight: 800; display: block; }
+  /* 出題選択 */
+  #folderBar { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px 12px; padding: 2px 16px 6px; scrollbar-width: none; }
+  #folderBar::-webkit-scrollbar { display: none; }
+  .chip { flex: 0 0 auto; background: var(--surface-2); border: 1.5px solid var(--line); color: var(--text); min-height: 42px; padding: 8px 16px; border-radius: 21px; font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .preset { display: flex; gap: 12px; padding: 10px; border: 1.5px solid var(--line); border-radius: 12px; margin-bottom: 10px; background: var(--surface); }
+  .preset.sel { border: 2px solid var(--primary); background: #eff4ff; }
+  .preset img { width: 76px; height: 76px; object-fit: cover; border-radius: 8px; background: #e4e7ec; flex: 0 0 76px; }
+  .preset .info { flex: 1; min-width: 0; font-size: 14px; }
+  .preset .texts { color: var(--text-2); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cand { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 10px; margin-bottom: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
+  .cand input { width: 20px; height: 20px; accent-color: var(--live); }
+  .cand .note { font-size: 12px; color: var(--danger); font-weight: 600; }
+  .cand.q { border-style: dashed; }
+  /* 回答一覧 */
+  .ans { display: flex; justify-content: space-between; gap: 8px; padding: 8px 4px; border-bottom: 1px dashed var(--line); font-size: 15px; }
+  .ans:last-child { border-bottom: none; }
+  .ans .who { color: var(--text-2); font-size: 13px; }
+  .ans .ok { color: var(--live); font-weight: 800; }
+  .ans .ng { color: var(--danger); font-weight: 800; }
+  /* スコア */
+  .teams { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+  .team { border: 1.5px solid var(--line); border-radius: 12px; padding: 10px; text-align: center; }
+  .team .tpts { font-size: 30px; font-weight: 800; }
+  .team.a .tpts { color: var(--primary); }
+  .team.b .tpts { color: var(--danger); }
+  .hostrow { display: flex; justify-content: space-between; padding: 6px 4px; border-bottom: 1px dashed var(--line); font-size: 14px; }
+  .hostrow:last-child { border-bottom: none; }
+  .hidden { display: none !important; }
+  #toast {
+    position: fixed; bottom: calc(24px + env(safe-area-inset-bottom)); left: 50%;
+    transform: translateX(-50%); background: #171a21; color: #fff; padding: 12px 22px;
+    border-radius: 24px; font-size: 15px; opacity: 0; transition: opacity .25s;
+    pointer-events: none; white-space: nowrap; z-index: 1000;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>🎛 クイズ進行管理</h1>
+    <a href="/quiz" target="_blank">参加者ページ →</a>
+  </header>
+
+  <main>
+    <!-- 進行ステータス -->
+    <div class="card">
+      <div class="stateBig idle" id="stateBig">待機中</div>
+      <div class="row2">
+        <button class="btn-gold" id="closeBtn" disabled>🔒 回答締切</button>
+        <button class="btn-green" id="revealBtn" disabled>🎉 結果発表</button>
+      </div>
+      <div style="height:10px"></div>
+      <button class="btn-gray" id="idleBtn">⏸ 待機画面に戻す（次の問題へ）</button>
+    </div>
+
+    <!-- 出題 -->
+    <div class="card">
+      <h2>📢 出題する問題を選ぶ</h2>
+      <div id="folderBar"></div>
+      <div id="presetList"></div>
+      <div id="candArea" class="hidden">
+        <label>正解にするテキスト候補（回答判定に使用）</label>
+        <div id="candList"></div>
+        <button class="btn-primary" id="startBtn">▶ この問題で回答受付スタート</button>
+      </div>
+    </div>
+
+    <!-- 回答一覧 -->
+    <div class="card">
+      <h2>📥 回答状況（リアルタイム）</h2>
+      <div id="answerList" style="min-height:24px"><span style="color:var(--text-2);font-size:14px">まだ回答はありません</span></div>
+    </div>
+
+    <!-- スコア -->
+    <div class="card">
+      <h2>🏆 スコアボード（正解 +<span id="ptsLabel">3</span>P 自動計算）</h2>
+      <div class="teams" id="teams"></div>
+      <div id="hostScores"></div>
+    </div>
+
+    <!-- 担当設定 -->
+    <div class="card">
+      <h2>👥 担当・チーム設定（1行1名）</h2>
+      <div class="row2">
+        <div>
+          <label>チームA チーム名</label>
+          <input type="text" id="teamAName" placeholder="チームA">
+          <label>チームA 担当</label>
+          <textarea id="teamAHosts" placeholder="とーや&#10;じん"></textarea>
+        </div>
+        <div>
+          <label>チームB チーム名</label>
+          <input type="text" id="teamBName" placeholder="チームB">
+          <label>チームB 担当</label>
+          <textarea id="teamBHosts" placeholder="ちんすこう&#10;そうしはいにん"></textarea>
+        </div>
+      </div>
+      <button class="btn-primary" id="hostsBtn">担当・チームを保存</button>
+    </div>
+
+    <!-- リセット -->
+    <div class="card">
+      <h2>⚠ リセット</h2>
+      <button class="btn-del" id="resetBtn" style="width:100%">スコアと進行を全リセット（担当設定は残る）</button>
+    </div>
+  </main>
+
+  <div id="toast"></div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let presets = [];
+  let quiz = null;         // 公開状態
+  let adminQuiz = null;    // 回答一覧つき
+  let folderFilter = '__all__';
+  let selPreset = null;
+  let selCorrect = 0;
+  let toastTimer;
+
+  function showToast(msg) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  // 合言葉（操作画面と共有）
+  if (!localStorage.getItem('adminKey')) {
+    const k = prompt('操作用の合言葉を入力してください');
+    if (k !== null) localStorage.setItem('adminKey', k.trim());
+  }
+  async function api(url, opts = {}, retried = false) {
+    opts.headers = { ...(opts.headers || {}), 'X-Admin-Key': localStorage.getItem('adminKey') || '' };
+    const res = await fetch(url, opts);
+    if (res.status === 401 && !retried) {
+      const k = prompt('合言葉が違います。もう一度入力してください');
+      if (k !== null) { localStorage.setItem('adminKey', k.trim()); return api(url, opts, true); }
+    }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'error');
+    return data;
+  }
+  const post = (url, body) => api(url, { method: 'POST', body: JSON.stringify(body || {}), headers: { 'Content-Type': 'application/json' } });
+
+  // ---- 出題リスト ----
+  const folderNames = () => [...new Set(presets.map((p) => p.folder || '').filter(Boolean))];
+  function visiblePresets() {
+    if (folderFilter === '__all__') return presets;
+    return presets.filter((p) => (p.folder || '') === folderFilter);
+  }
+  function renderFolderBar() {
+    const bar = $('folderBar');
+    bar.innerHTML = '';
+    const chips = [['__all__', 'すべて'], ...folderNames().map((f) => [f, '📁 ' + f])];
+    for (const [val, label] of chips) {
+      const b = document.createElement('button');
+      b.className = 'chip' + (folderFilter === val ? ' on' : '');
+      b.textContent = label;
+      b.onclick = () => { folderFilter = val; renderPresets(); };
+      bar.appendChild(b);
+    }
+  }
+  function renderPresets() {
+    renderFolderBar();
+    const list = $('presetList');
+    list.innerHTML = '';
+    for (const p of visiblePresets()) {
+      const div = document.createElement('div');
+      div.className = 'preset' + (selPreset === p.id ? ' sel' : '');
+      div.style.cursor = 'pointer';
+      const img = document.createElement('img');
+      if (p.image) img.src = p.image;
+      const info = document.createElement('div');
+      info.className = 'info';
+      info.innerHTML = `<b>${(p.texts[0] || { t: '(テキストなし)' }).t}</b>` +
+        (p.folder ? ` <span style="color:var(--text-2);font-size:12px">📁${p.folder}</span>` : '') +
+        `<div class="texts">${p.texts.map((x) => x.t).join(' / ')}</div>`;
+      div.append(img, info);
+      div.onclick = () => { selPreset = p.id; selCorrect = -1; renderPresets(); renderCands(p); };
+      list.appendChild(div);
+    }
+  }
+  function renderCands(p) {
+    const area = $('candArea');
+    area.classList.remove('hidden');
+    const cl = $('candList');
+    cl.innerHTML = '';
+    p.texts.forEach((x, i) => {
+      const lb = document.createElement('label');
+      lb.className = 'cand' + (x.t.includes('〇') ? ' q' : '');
+      const r = document.createElement('input');
+      r.type = 'radio';
+      r.name = 'correct';
+      r.checked = selCorrect === i;
+      r.onchange = () => { selCorrect = i; };
+      lb.append(r, document.createTextNode(x.t + (x.t.includes('〇') ? '（問題文）' : '')));
+      if (x.note) {
+        const n = document.createElement('span');
+        n.className = 'note';
+        n.textContent = '注: ' + x.note;
+        lb.appendChild(n);
+      }
+      cl.appendChild(lb);
+    });
+    area.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  $('startBtn').onclick = async () => {
+    if (!selPreset) return showToast('問題を選んでください');
+    if (selCorrect < 0) return showToast('正解の候補を選んでください');
+    try {
+      await post('/api/quiz/start', { presetId: selPreset, correctIndex: selCorrect });
+      showToast('回答受付を開始しました！');
+      refreshAdmin();
+    } catch (e) { showToast(e.message); }
+  };
+  $('closeBtn').onclick = async () => { try { await post('/api/quiz/close'); showToast('締め切りました'); refreshAdmin(); } catch (e) { showToast(e.message); } };
+  $('revealBtn').onclick = async () => { try { await post('/api/quiz/reveal'); showToast('結果発表！'); refreshAdmin(); } catch (e) { showToast(e.message); } };
+  $('idleBtn').onclick = async () => { try { await post('/api/quiz/idle'); showToast('待機に戻しました'); refreshAdmin(); } catch (e) { showToast(e.message); } };
+  $('resetBtn').onclick = async () => {
+    if (!confirm('スコア・進行をすべてリセットします。よろしいですか？')) return;
+    try { await post('/api/quiz/reset'); showToast('リセットしました'); refreshAdmin(); } catch (e) { showToast(e.message); }
+  };
+  $('hostsBtn').onclick = async () => {
+    const lines = (v) => v.split('\n').map((s) => s.trim()).filter(Boolean);
+    try {
+      await post('/api/quiz/hosts', {
+        teamA: lines($('teamAHosts').value),
+        teamB: lines($('teamBHosts').value),
+        teamNames: { A: $('teamAName').value.trim() || 'チームA', B: $('teamBName').value.trim() || 'チームB' },
+      });
+      showToast('担当・チームを保存しました');
+      refreshAdmin();
+    } catch (e) { showToast(e.message); }
+  };
+
+  // ---- 状態描画 ----
+  const stateLabel = { idle: '待機中', open: '🟢 回答受付中', closed: '🔒 締切済み（発表待ち）', revealed: '🎉 結果発表済み' };
+  let hostsFormTouched = false;
+  ['teamAHosts', 'teamBHosts', 'teamAName', 'teamBName'].forEach((id) => $(id).addEventListener('input', () => { hostsFormTouched = true; }));
+
+  function render() {
+    if (!quiz) return;
+    const sb = $('stateBig');
+    sb.className = 'stateBig ' + quiz.state;
+    sb.innerHTML = `${stateLabel[quiz.state]}${quiz.qnum ? `（第${quiz.qnum}問）` : ''}` +
+      (quiz.state === 'open' || quiz.state === 'closed' ? `<span class="count">${quiz.answered}件の回答</span>` : '');
+    $('closeBtn').disabled = quiz.state !== 'open';
+    $('revealBtn').disabled = !(quiz.state === 'open' || quiz.state === 'closed');
+    $('ptsLabel').textContent = quiz.points;
+
+    // スコア
+    const totals = { A: 0, B: 0 };
+    for (const h of quiz.hosts) totals[h.team] += quiz.scores[h.name] || 0;
+    $('teams').innerHTML = ['A', 'B'].map((t) =>
+      `<div class="team ${t.toLowerCase()}"><div style="font-size:13px;color:var(--text-2);font-weight:700">${quiz.teamNames[t] || t}</div><div class="tpts">${totals[t]}P</div></div>`).join('');
+    $('hostScores').innerHTML = [...quiz.hosts]
+      .map((h) => ({ ...h, pts: quiz.scores[h.name] || 0 }))
+      .sort((a, b) => b.pts - a.pts)
+      .map((h) => `<div class="hostrow"><span>${quiz.teamNames[h.team] || h.team}｜${h.name}</span><b>${h.pts}P</b></div>`)
+      .join('') || '<div style="color:var(--text-2);font-size:14px">担当が未設定です</div>';
+
+    // 担当フォーム（編集中でなければ同期）
+    if (!hostsFormTouched) {
+      $('teamAHosts').value = quiz.hosts.filter((h) => h.team === 'A').map((h) => h.name).join('\n');
+      $('teamBHosts').value = quiz.hosts.filter((h) => h.team === 'B').map((h) => h.name).join('\n');
+      $('teamAName').value = quiz.teamNames.A || '';
+      $('teamBName').value = quiz.teamNames.B || '';
+    }
+
+    // 回答一覧
+    const al = $('answerList');
+    const answers = adminQuiz ? Object.values(adminQuiz.answers || {}) : [];
+    if (!answers.length) {
+      al.innerHTML = '<span style="color:var(--text-2);font-size:14px">まだ回答はありません</span>';
+    } else {
+      al.innerHTML = answers
+        .sort((a, b) => a.at - b.at)
+        .map((a) => `<div class="ans"><span><b>${esc(a.answer)}</b> <span class="who">${esc(a.name)}（担当: ${esc(a.host)}）</span></span>` +
+          (quiz.state === 'revealed' ? `<span class="${a.ok ? 'ok' : 'ng'}">${a.ok ? '⭕ +' + quiz.points + 'P' : '❌'}</span>` : '') + '</div>')
+        .join('');
+    }
+  }
+  const esc = (s) => (s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  async function refreshAdmin() {
+    try {
+      const data = await post('/api/quiz/admin-state');
+      adminQuiz = data.quiz;
+      quiz = data.quiz;
+      render();
+    } catch (e) {}
+  }
+  async function refreshPresets() {
+    const res = await fetch('/api/presets', { cache: 'no-store' });
+    presets = (await res.json()).presets;
+    renderPresets();
+  }
+
+  // WebSocket（公開状態の即時反映）+ 詳細は admin-state で追従
+  let wsOk = false;
+  function connectWS() {
+    let ws;
+    try {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${proto}://${location.host}/ws`);
+    } catch (e) { setTimeout(connectWS, 5000); return; }
+    ws.onopen = () => { wsOk = true; };
+    ws.onmessage = (ev) => {
+      const data = JSON.parse(ev.data);
+      if (data.quiz) { quiz = data.quiz; render(); refreshAdmin(); }
+    };
+    ws.onclose = () => { wsOk = false; setTimeout(connectWS, 3000); };
+    ws.onerror = () => ws.close();
+  }
+  connectWS();
+  setInterval(() => { if (!wsOk) refreshAdmin(); }, 3000);
+  refreshPresets();
+  refreshAdmin();
+</script>
+</body>
+</html>

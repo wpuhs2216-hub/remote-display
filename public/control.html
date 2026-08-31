@@ -529,6 +529,13 @@
       box.appendChild(idle);
       return;
     }
+    if (current.video) {
+      const v = document.createElement('div');
+      v.className = 'pv-text';
+      v.textContent = '🎬 解説動画を出力中';
+      box.appendChild(v);
+      return;
+    }
     if (current.image) {
       const img = document.createElement('img');
       img.src = current.image;
@@ -733,6 +740,24 @@
         body.appendChild(row);
       });
 
+      // 解説動画つきプリセット: タップで動画を出力
+      if (p.video && !editMode) {
+        const vrow = document.createElement('div');
+        const vShown = current && current.video === p.video;
+        vrow.className = 'text-row' + (vShown ? ' on' : '');
+        const vtxt = document.createElement('div');
+        vtxt.className = 'txt';
+        vtxt.textContent = '🎬 解説動画を出力';
+        vrow.appendChild(vtxt);
+        vrow.onclick = async () => {
+          if (vShown) return;
+          await api('/api/show', { method: 'POST', body: JSON.stringify({ presetId: p.id, video: true }), headers: { 'Content-Type': 'application/json' } });
+          showToast('解説動画を出力しました');
+          await refresh();
+        };
+        body.appendChild(vrow);
+      }
+
       // 注釈ありのテキストがある場合、出力に含めるかのチェック（通常モードのみ）
       const selEntry = p.texts[selectedText[p.id] || 0];
       const shownEntry = active ? p.texts.find((x) => x.t === current.text) : null;
@@ -798,6 +823,23 @@
           input.click();
         };
 
+        const videoBtn = document.createElement('button');
+        videoBtn.className = 'btn-edit';
+        videoBtn.textContent = p.video ? '🎬差替' : '🎬動画';
+        videoBtn.onclick = () => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = 'video/mp4,video/webm';
+          input.onchange = async () => {
+            const file = input.files[0];
+            if (!file) return;
+            if (file.size > 20 * 1024 * 1024) return showToast('動画は20MBまでです');
+            showToast('動画をアップロード中…');
+            await putPreset(p.id, { video: file });
+          };
+          input.click();
+        };
+
         const upBtn = document.createElement('button');
         upBtn.className = 'btn-edit';
         upBtn.textContent = '↑';
@@ -825,7 +867,7 @@
           await refresh();
         };
 
-        btns.append(addTextBtn, folderBtn, imageBtn, upBtn, downBtn, saveBtn, delBtn);
+        btns.append(addTextBtn, folderBtn, imageBtn, videoBtn, upBtn, downBtn, saveBtn, delBtn);
         body.appendChild(btns);
       }
 
