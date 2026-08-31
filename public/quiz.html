@@ -130,7 +130,21 @@
   .tile.fixed { background: var(--surface-2); border: 1.5px solid var(--line); }
   .tile.blank { background: transparent; border: 2px dashed var(--primary); color: var(--gold); }
   .tile.blank.filled { border-style: solid; border-color: var(--gold); }
+  /* 認証コード風: 次に入力されるタイルを点滅ハイライト */
+  .tile.blank.active { border-style: solid; border-color: var(--live); animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { border-color: transparent; } }
   .blank-hint { text-align: center; color: var(--text-2); font-size: 13px; margin-bottom: 8px; }
+  /* 穴埋めモード時は実入力欄を不可視化（IME用に生かしたまま） */
+  #answerInput.otp {
+    opacity: 0;
+    height: 1px;
+    min-height: 1px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    caret-color: transparent;
+    pointer-events: none;
+  }
   .qnum { text-align: center; color: var(--text-2); font-size: 13px; font-weight: 700; margin-bottom: 6px; }
   /* 結果 */
   .result-mark { text-align: center; font-size: 72px; font-weight: 800; line-height: 1.1; }
@@ -318,15 +332,18 @@
     const bi = blankInfo();
     if (!bi) return;
     const typed = [...$('answerInput').value.replace(/\s+/g, '')];
+    const focused = document.activeElement === $('answerInput');
     const row = $('tileRow');
     row.innerHTML = '';
     let k = 0;
     for (const c of bi.chars) {
       const tile = document.createElement('div');
       if (c === '〇') {
-        const ch = typed[k++];
-        tile.className = 'tile blank' + (ch ? ' filled' : '');
+        const ch = typed[k];
+        // 次に入力される空マスを点滅させる（フォーカス中のみ）
+        tile.className = 'tile blank' + (ch ? ' filled' : '') + (focused && k === typed.length ? ' active' : '');
         tile.textContent = ch || '';
+        k++;
       } else {
         tile.className = 'tile fixed';
         tile.textContent = c;
@@ -334,14 +351,30 @@
       row.appendChild(tile);
     }
   }
-  $('answerInput').addEventListener('input', () => {
+  // タイルをタップ → 不可視の入力欄にフォーカスしてキーボードを出す
+  $('tileRow').addEventListener('click', () => $('answerInput').focus());
+  let composing = false;
+  $('answerInput').addEventListener('compositionstart', () => { composing = true; });
+  $('answerInput').addEventListener('compositionend', () => {
+    composing = false;
     const bi = blankInfo();
     if (!bi) return;
-    // 穴の数を超えた入力は切り詰める（IME確定後）
     const v = [...$('answerInput').value.replace(/\s+/g, '')];
     if (v.length > bi.blanks) $('answerInput').value = v.slice(0, bi.blanks).join('');
     renderTiles();
   });
+  $('answerInput').addEventListener('input', () => {
+    const bi = blankInfo();
+    if (!bi) return;
+    // IME変換中は値をいじらない（変換が壊れるため）。確定後のみ切り詰め
+    if (!composing) {
+      const v = [...$('answerInput').value.replace(/\s+/g, '')];
+      if (v.length > bi.blanks) $('answerInput').value = v.slice(0, bi.blanks).join('');
+    }
+    renderTiles();
+  });
+  $('answerInput').addEventListener('focus', renderTiles);
+  $('answerInput').addEventListener('blur', renderTiles);
 
   async function submitAnswer() {
     const bi = blankInfo();
@@ -358,7 +391,7 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'error');
       myAnswerFor = quiz.qnum;
-      localStorage.setItem('quizMyAnswer', JSON.stringify({ qnum: quiz.qnum, answer: a }));
+      localStorage.setItem('quizMyAnswer', JSON.stringify({ qnum: quiz.qnum, q: quiz.question ? quiz.question.text : '', answer: a }));
       showToast('回答を送信しました！');
       render();
     } catch (e) {
@@ -372,7 +405,7 @@
   function savedAnswer() {
     try {
       const s = JSON.parse(localStorage.getItem('quizMyAnswer') || 'null');
-      return (s && quiz && s.qnum === quiz.qnum) ? s.answer : null;
+      return (s && quiz && s.qnum === quiz.qnum && quiz.question && s.q === quiz.question.text) ? s.answer : null;
     } catch { return null; }
   }
 
@@ -423,11 +456,13 @@
       $('blankHint').classList.toggle('hidden', !bi);
       if (bi) {
         renderTiles();
-        $('blankHint').textContent = `〇の部分だけ入力してね（${bi.blanks}文字）`;
-        $('answerLabel').textContent = `〇に入る${bi.blanks}文字（ひらがなでOK）`;
-        $('answerInput').placeholder = bi.blanks === 1 ? '1文字' : `${bi.blanks}文字`;
+        $('blankHint').textContent = `空いてるマスをタップして入力（${bi.blanks}文字・ひらがなでOK）`;
+        $('answerLabel').classList.add('hidden');
+        $('answerInput').classList.add('otp');
       } else {
+        $('answerLabel').classList.remove('hidden');
         $('answerLabel').textContent = 'あなたの回答（ひらがなでOK）';
+        $('answerInput').classList.remove('otp');
         $('answerInput').placeholder = '例: たまねぎ';
       }
 
