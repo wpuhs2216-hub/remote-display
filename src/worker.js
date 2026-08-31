@@ -33,6 +33,7 @@ function normalizeDb(db) {
   if (!db.settings) db.settings = { bg: '#ffffff', fg: '#000000' };
   if (db.current && db.current.showNote === undefined) db.current.showNote = true;
   if (!db.quiz) db.quiz = quizDefault();
+  if (!db.quiz.tableStats) db.quiz.tableStats = {};
   return db;
 }
 
@@ -53,8 +54,9 @@ const quizDefault = () => ({
   state: 'idle',                               // idle | open | closed | revealed
   qnum: 0,
   current: null,                               // {presetId, questionIndex, correctIndex, correctText, correctNote}
-  answers: {},                                 // playerId -> {name, host, answer, at, ok?}
+  answers: {},                                 // playerId -> {name, host, table, answer, at, ok?}
   scores: {},                                  // 担当名 -> 累計ポイント
+  tableStats: {},                              // 卓名 -> {answers, correct} の累計
   pointsPerCorrect: 3,
 });
 
@@ -153,14 +155,20 @@ export class StateDO {
 
     // 参加者の回答送信（合言葉不要・受付中のみ）
     if (method === 'POST' && path === '/api/quiz/answer') {
-      const { playerId, name, host, answer } = await req.json();
+      const body = await req.json();
+      const { playerId, name, host, answer } = body;
       const q = db.quiz;
       if (q.state !== 'open') return json({ error: '回答受付中ではありません' }, 400);
       if (typeof playerId !== 'string' || !playerId || playerId.length > 64) return json({ error: 'playerId が不正です' }, 400);
       const a = (answer || '').toString().trim();
       if (!a || a.length > 50) return json({ error: '回答は1〜50文字で入力してください' }, 400);
       if (q.hosts.length && !q.hosts.some((h) => h.name === host)) return json({ error: '担当を選択してください' }, 400);
-      q.answers[playerId] = { name: (name || '').toString().slice(0, 20), host: (host || '').toString().slice(0, 20), answer: a, at: Date.now() };
+      q.answers[playerId] = {
+        name: (name || '').toString().slice(0, 20),
+        host: (host || '').toString().slice(0, 20),
+        table: (body.table || '').toString().slice(0, 10),
+        answer: a, at: Date.now(),
+      };
       await this.save();
       this.broadcast();
       return json({ ok: true });
@@ -221,13 +229,18 @@ export class StateDO {
         return json({ quiz: publicQuiz(db) });
       }
 
-      // 結果発表（自動判定 + 担当へ加点）
+      // 結果発表（自動判定 + 担当へ加点 + 卓別集計）
       if (action === 'reveal') {
         if (q.current && (q.state === 'open' || q.state === 'closed')) {
           const key = normAnswer(q.current.correctText);
+          if (!q.tableStats) q.tableStats = {};
           for (const a of Object.values(q.answers)) {
             a.ok = normAnswer(a.answer) === key;
             if (a.ok && a.host) q.scores[a.host] = (q.scores[a.host] || 0) + q.pointsPerCorrect;
+            const t = a.table || '不明';
+            if (!q.tableStats[t]) q.tableStats[t] = { answers: 0, correct: 0 };
+            q.tableStats[t].answers += 1;
+            if (a.ok) q.tableStats[t].correct += 1;
           }
           q.state = 'revealed';
           await this.save();
@@ -254,9 +267,9 @@ export class StateDO {
         return json({ quiz: publicQuiz(db) });
       }
 
-      // 進行用の詳細状態（回答一覧つき）
+      // 進行用の詳細状態（回答一覧・卓別集計つき）
       if (action === 'admin-state') {
-        return json({ quiz: { ...publicQuiz(db), answers: q.answers, current: q.current } });
+        return json({ quiz: { ...publicQuiz(db), answers: q.answers, current: q.current, tableStats: q.tableStats || {} } });
       }
 
       return json({ error: 'not found' }, 404);

@@ -229,6 +229,11 @@
     localStorage.setItem('quizPlayerId', playerId);
   }
 
+  // 卓名（QRの ?t= から取得して記憶。卓別集計に使用）
+  const tParam = new URLSearchParams(location.search).get('t');
+  if (tParam) localStorage.setItem('quizTable', tParam.slice(0, 10));
+  const myTable = () => localStorage.getItem('quizTable') || '';
+
   const myName = () => localStorage.getItem('quizName') || '';
   const myHost = () => localStorage.getItem('quizHost') || '';
 
@@ -279,7 +284,7 @@
       const res = await fetch('/api/quiz/answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerId, name: myName(), host: myHost(), answer: a }),
+        body: JSON.stringify({ playerId, name: myName(), host: myHost(), table: myTable(), answer: a }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'error');
@@ -321,7 +326,7 @@
     $('me').classList.toggle('hidden', !joined);
     if (!joined) { renderSetup(); return; }
     $('meName').textContent = myName();
-    $('meHost').textContent = myHost() || '未選択';
+    $('meHost').textContent = (myHost() || '未選択') + (myTable() ? `｜${myTable()}卓` : '');
     if (!quiz) return;
 
     const banner = $('banner');

@@ -140,6 +140,12 @@
       <div class="teams" id="teams"></div>
     </div>
 
+    <!-- 卓別集計 -->
+    <div class="card">
+      <h2>🍾 卓別集計（累計）</h2>
+      <div id="tableStats"><span style="color:var(--text-2);font-size:14px">まだ集計はありません</span></div>
+    </div>
+
     <!-- 担当設定 -->
     <div class="card">
       <h2>👥 担当・チーム設定（1行1名）</h2>
@@ -333,10 +339,29 @@
     } else {
       al.innerHTML = answers
         .sort((a, b) => a.at - b.at)
-        .map((a) => `<div class="ans"><span><b>${esc(a.answer)}</b> <span class="who">${esc(a.name)}（担当: ${esc(a.host)}）</span></span>` +
+        .map((a) => `<div class="ans"><span><b>${esc(a.answer)}</b> <span class="who">${esc(a.name)}${a.table ? '｜' + esc(a.table) + '卓' : ''}（担当: ${esc(a.host)}）</span></span>` +
           (quiz.state === 'revealed' ? `<span class="${a.ok ? 'ok' : 'ng'}">${a.ok ? '⭕ +' + quiz.points + 'P' : '❌'}</span>` : '') + '</div>')
         .join('');
     }
+
+    // 卓別集計（累計 + 現在の問題の回答数）
+    const stats = (adminQuiz && adminQuiz.tableStats) || {};
+    const liveByTable = {};
+    if (quiz.state === 'open' || quiz.state === 'closed') {
+      for (const a of answers) {
+        const t = a.table || '不明';
+        liveByTable[t] = (liveByTable[t] || 0) + 1;
+      }
+    }
+    const tables = [...new Set([...Object.keys(stats), ...Object.keys(liveByTable)])]
+      .sort((a, b) => a.localeCompare(b, 'ja'));
+    $('tableStats').innerHTML = tables.length
+      ? tables.map((t) => {
+          const s = stats[t] || { answers: 0, correct: 0 };
+          const live = liveByTable[t] ? `<span style="color:var(--live);font-weight:700">（今の問題: ${liveByTable[t]}件回答中）</span>` : '';
+          return `<div class="hostrow"><span><b>${esc(t)}卓</b> ${live}</span><span>正解 <b>${s.correct}</b> / 回答 ${s.answers}</span></div>`;
+        }).join('')
+      : '<span style="color:var(--text-2);font-size:14px">まだ集計はありません</span>';
   }
   const esc = (s) => (s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
