@@ -143,8 +143,15 @@
 
     <!-- スコア -->
     <div class="card">
-      <h2>🏆 スコアボード（正解 +<span id="ptsLabel">3</span>P 自動計算）</h2>
+      <h2>🏆 スコアボード（正解 +<span id="ptsLabel">1</span>P 自動計算）</h2>
       <div class="teams" id="teams"></div>
+    </div>
+
+    <!-- 全問正解ボーナス -->
+    <div class="card">
+      <h2>🏅 全問正解ボーナス（+<span id="bonusLabel">10</span>P）</h2>
+      <div id="perfectList" style="margin-bottom:10px"><span style="color:var(--text-2);font-size:14px">まだ対象者はいません</span></div>
+      <button class="btn-gold" id="perfectBtn">🏅 全問正解者にボーナスを付与</button>
     </div>
 
     <!-- 卓別集計 -->
@@ -305,6 +312,16 @@
     if (!confirm('スコア・進行をすべてリセットします。よろしいですか？')) return;
     try { await post('/api/quiz/reset'); showToast('リセットしました'); refreshAdmin(); } catch (e) { showToast(e.message); }
   };
+  $('perfectBtn').onclick = async () => {
+    if (!confirm('全問正解の参加者にボーナスを付与します。よろしいですか？')) return;
+    try {
+      const data = await post('/api/quiz/award-perfect');
+      showToast(data.awarded.length
+        ? `${data.awarded.map((w) => w.name).join('、')} に +${data.bonus}P を付与しました`
+        : '新しく付与できる対象者はいません');
+      refreshAdmin();
+    } catch (e) { showToast(e.message); }
+  };
   $('hostsBtn').onclick = async () => {
     const lines = (v) => v.split('\n').map((s) => s.trim()).filter(Boolean);
     try {
@@ -372,6 +389,18 @@
         ? `正解: ${esc(cur.correctText)}` + (extras.length ? ` ＋ 追加正解: ${extras.map(esc).join('、')}` : '')
         : '';
     }
+
+    // 全問正解ボーナス（全問回答かつ全問正解の参加者）
+    $('bonusLabel').textContent = (adminQuiz && adminQuiz.perfectBonus) || 10;
+    const pstats = (adminQuiz && adminQuiz.playerStats) || {};
+    const awardedIds = (adminQuiz && adminQuiz.perfectAwarded) || [];
+    const perfects = Object.entries(pstats)
+      .filter(([, p]) => quiz.qnum > 0 && p.answered === quiz.qnum && p.correct === quiz.qnum);
+    $('perfectList').innerHTML = perfects.length
+      ? perfects.map(([pid, p]) =>
+          `<div class="hostrow"><span><b>${esc(p.name)}</b>${p.table ? '｜' + esc(p.table) + '卓' : ''}（担当: ${esc(p.host)}）</span><span>${awardedIds.includes(pid) ? '✅ 付与済み' : `${p.correct}問 全問正解中`}</span></div>`).join('')
+      : `<span style="color:var(--text-2);font-size:14px">まだ対象者はいません（第${quiz.qnum || 0}問まで全問正解の参加者が並びます）</span>`;
+    $('perfectBtn').disabled = !perfects.some(([pid]) => !awardedIds.includes(pid));
 
     // 卓別集計（累計 + 現在の問題の回答数）
     const stats = (adminQuiz && adminQuiz.tableStats) || {};

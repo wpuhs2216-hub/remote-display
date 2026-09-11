@@ -34,6 +34,11 @@ function normalizeDb(db) {
   if (db.current && db.current.showNote === undefined) db.current.showNote = true;
   if (!db.quiz) db.quiz = quizDefault();
   if (!db.quiz.tableStats) db.quiz.tableStats = {};
+  // 旧仕様（正解+3P）からの移行: 1問+1P・全問正解ボーナス+10P
+  if (db.quiz.pointsPerCorrect === 3) db.quiz.pointsPerCorrect = 1;
+  if (!db.quiz.playerStats) db.quiz.playerStats = {};
+  if (!db.quiz.perfectBonus) db.quiz.perfectBonus = 10;
+  if (!db.quiz.perfectAwarded) db.quiz.perfectAwarded = [];
   return db;
 }
 
@@ -57,7 +62,10 @@ const quizDefault = () => ({
   answers: {},                                 // playerId -> {name, host, table, answer, at, ok?}
   scores: {},                                  // 担当名 -> 累計ポイント
   tableStats: {},                              // 卓名 -> {answers, correct} の累計
-  pointsPerCorrect: 3,
+  playerStats: {},                             // playerId -> {name, host, table, answered, correct} の累計
+  pointsPerCorrect: 1,
+  perfectBonus: 10,                            // 全問正解ボーナス
+  perfectAwarded: [],                          // ボーナス付与済み playerId（二重付与防止）
 });
 
 // 穴埋め入力モード: 問題文に〇があり、正解と文字数が一致する場合のみ有効
@@ -279,13 +287,19 @@ export class StateDO {
         if (q.current && (q.state === 'open' || q.state === 'closed')) {
           const keys = [q.current.correctText, ...(q.current.extraCorrect || [])].map(normAnswer);
           if (!q.tableStats) q.tableStats = {};
-          for (const a of Object.values(q.answers)) {
+          for (const [pid, a] of Object.entries(q.answers)) {
             a.ok = keys.includes(normAnswer(a.answer));
             if (a.ok && a.host) q.scores[a.host] = (q.scores[a.host] || 0) + q.pointsPerCorrect;
             const t = a.table || '不明';
             if (!q.tableStats[t]) q.tableStats[t] = { answers: 0, correct: 0 };
             q.tableStats[t].answers += 1;
             if (a.ok) q.tableStats[t].correct += 1;
+            // 参加者別の累計（全問正解ボーナス判定用）
+            if (!q.playerStats[pid]) q.playerStats[pid] = { answered: 0, correct: 0 };
+            const ps = q.playerStats[pid];
+            ps.name = a.name; ps.host = a.host; ps.table = a.table;
+            ps.answered += 1;
+            if (a.ok) ps.correct += 1;
           }
           q.state = 'revealed';
           await this.save();
@@ -312,9 +326,27 @@ export class StateDO {
         return json({ quiz: publicQuiz(db) });
       }
 
-      // 進行用の詳細状態（回答一覧・卓別集計つき）
+      // 全問正解ボーナスの付与（全問回答かつ全問正解の参加者の担当へ加点・二重付与なし）
+      if (action === 'award-perfect') {
+        if (!q.qnum) return json({ error: 'まだ出題がありません' }, 400);
+        const awarded = [];
+        for (const [pid, ps] of Object.entries(q.playerStats || {})) {
+          if (ps.answered === q.qnum && ps.correct === q.qnum && !q.perfectAwarded.includes(pid)) {
+            if (ps.host) q.scores[ps.host] = (q.scores[ps.host] || 0) + q.perfectBonus;
+            q.perfectAwarded.push(pid);
+            awarded.push({ name: ps.name, host: ps.host, table: ps.table });
+          }
+        }
+        if (awarded.length) {
+          await this.save();
+          this.broadcast();
+        }
+        return json({ awarded, bonus: q.perfectBonus, quiz: publicQuiz(db) });
+      }
+
+      // 進行用の詳細状態（回答一覧・卓別集計・参加者別累計つき）
       if (action === 'admin-state') {
-        return json({ quiz: { ...publicQuiz(db), answers: q.answers, current: q.current, tableStats: q.tableStats || {} } });
+        return json({ quiz: { ...publicQuiz(db), answers: q.answers, current: q.current, tableStats: q.tableStats || {}, playerStats: q.playerStats || {}, perfectBonus: q.perfectBonus, perfectAwarded: q.perfectAwarded || [] } });
       }
 
       return json({ error: 'not found' }, 404);
