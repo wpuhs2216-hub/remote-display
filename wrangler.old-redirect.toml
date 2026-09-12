@@ -1,0 +1,19 @@
+# 旧本番(wpuhs2216アカウント): 印刷済みQRカード互換のため全パスを新本番へ301リダイレクト
+# デプロイ: npx wrangler deploy --config wrangler.old-redirect.toml
+# 旧データ(DO/KV)は温存。元に戻すには main を src/worker.js に戻して assets を復活させる
+name = "remote-display"
+main = "src/redirect.js"
+compatibility_date = "2026-07-01"
+account_id = "11e6fce881fcedb4347754779e37bd2d"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "d27d083c177c4ba0b514ebdd75fb9b61"
+
+[[durable_objects.bindings]]
+name = "STATE"
+class_name = "StateDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["StateDO"]

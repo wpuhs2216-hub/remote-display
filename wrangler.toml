@@ -1,6 +1,8 @@
+# 本番: ハジメル側アカウント(eguhaji) https://remote-display.eguhaji.workers.dev
 name = "remote-display"
 main = "src/worker.js"
 compatibility_date = "2026-07-01"
+account_id = "37b3e0e33aae125497b47004737095f3"
 
 [assets]
 directory = "public"
@@ -9,7 +11,7 @@ run_worker_first = ["/api/*", "/uploads/*", "/"]
 
 [[kv_namespaces]]
 binding = "KV"
-id = "d27d083c177c4ba0b514ebdd75fb9b61"
+id = "8efd09f1d8b4438b9fd2839e81e25722"
 
 # 状態保持用 Durable Object（強整合・WebSocketプッシュ）
 [[durable_objects.bindings]]
