@@ -5,6 +5,6 @@ export { StateDO } from './worker.js';
 export default {
   fetch(req) {
     const url = new URL(req.url);
-    return Response.redirect('https://remote-display.eguhaji.workers.dev' + url.pathname + url.search, 301);
+    return Response.redirect('https://quiz.hajimeru.jp' + url.pathname + url.search, 301);
   },
 };

@@ -4,6 +4,13 @@ main = "src/worker.js"
 compatibility_date = "2026-07-01"
 account_id = "37b3e0e33aae125497b47004737095f3"
 
+# 独自ドメイン: カスタムドメイン(DNS+証明書自動)に加え、
+# ワイルドカード経路 *.hajimeru.jp/* (テナントサイト用Worker) に奪われないよう明示経路も張る
+routes = [
+  { pattern = "quiz.hajimeru.jp", custom_domain = true },
+  { pattern = "quiz.hajimeru.jp/*", zone_name = "hajimeru.jp" },
+]
+
 [assets]
 directory = "public"
 binding = "ASSETS"
